@@ -13,9 +13,13 @@ Pattern: Loop/Refinement Agent
 """
 
 import json
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from typing import Any, Dict, List, Optional
-from .base import BaseAgent
-from ..core.models import (
+from agents.base import BaseAgent
+from core.models import (
     LearnerProfile, 
     DiagnosticQuestion, 
     DiagnosticAnswer,

@@ -13,9 +13,13 @@ Pattern: Content Transformation Pipeline
 """
 
 import re
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from typing import Any, Dict
-from .base import BaseAgent
-from ..core.models import AccessibleContent
+from agents.base import BaseAgent
+from core.models import AccessibleContent
 
 
 class SarvShikshaAgent(BaseAgent):

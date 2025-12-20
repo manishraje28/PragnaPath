@@ -13,9 +13,13 @@ Pattern: Sequential Router with Decision Logic
 """
 
 import json
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from typing import Any, Dict, Optional, List
-from .base import BaseAgent
-from ..core.models import SessionState, LearnerProfile, OrchestratorDecision
+from agents.base import BaseAgent
+from core.models import SessionState, LearnerProfile, OrchestratorDecision
 
 
 class SutradharAgent(BaseAgent):

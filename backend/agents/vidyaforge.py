@@ -12,9 +12,13 @@ Pattern: Parallel Content Generation
 """
 
 import json
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from typing import Any, Dict, List
-from .base import BaseAgent
-from ..core.models import (
+from agents.base import BaseAgent
+from core.models import (
     LearnerProfile,
     GeneratedContent,
     MCQQuestion,
