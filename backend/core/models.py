@@ -36,6 +36,14 @@ class DepthPreference(str, Enum):
     FORMULA_FIRST = "formula-first"
 
 
+class LearningIntent(str, Enum):
+    """Why the learner is studying this topic - affects teaching approach"""
+    EXAM = "exam"              # Focus on keywords, definitions, exam patterns
+    CONCEPTUAL = "conceptual"  # Focus on intuition, reasoning, analogies
+    INTERVIEW = "interview"    # Focus on trade-offs, edge cases, real-world
+    REVISION = "revision"      # Focus on concise summaries, quick refreshers
+
+
 # ============================================
 # LEARNER PROFILE - Core Cognitive Model
 # ============================================
@@ -61,6 +69,16 @@ class LearnerProfile(BaseModel):
         default=DepthPreference.INTUITION_FIRST,
         description="Prefers intuitive explanations or formal definitions first"
     )
+    learning_intent: LearningIntent = Field(
+        default=LearningIntent.CONCEPTUAL,
+        description="Why the learner is studying - exam, interview, deep understanding, or revision"
+    )
+    
+    # Misconception tracking
+    detected_misconceptions: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of detected misconceptions with severity"
+    )
     
     # Additional tracking
     topics_explored: List[str] = Field(default_factory=list)
@@ -75,14 +93,30 @@ class LearnerProfile(BaseModel):
     
     def to_context_string(self) -> str:
         """Generate a context string for agent prompts."""
+        intent_desc = {
+            LearningIntent.EXAM: "preparing for exams - focus on definitions, keywords, patterns",
+            LearningIntent.CONCEPTUAL: "deep understanding - focus on intuition, reasoning, analogies",
+            LearningIntent.INTERVIEW: "interview preparation - focus on trade-offs, edge cases, real-world",
+            LearningIntent.REVISION: "quick revision - focus on concise summaries"
+        }
+        
+        confidence_tone = {
+            ConfidenceLevel.LOW: "Use gentle, encouraging tone. Take smaller steps. Add reassurance.",
+            ConfidenceLevel.MEDIUM: "Use balanced tone with moderate pacing.",
+            ConfidenceLevel.HIGH: "Use direct tone. Can move faster. Add challenge questions."
+        }
+        
         return f"""
 LEARNER PROFILE:
 - Learning Style: {self.learning_style.value} ({"prefers stories and analogies" if self.learning_style == LearningStyle.CONCEPTUAL else "prefers visual diagrams" if self.learning_style == LearningStyle.VISUAL else "prefers exam patterns and definitions"})
+- Learning Intent: {self.learning_intent.value} ({intent_desc.get(self.learning_intent, '')})
 - Pace: {self.pace.value}
 - Confidence: {self.confidence.value}
+- TONE INSTRUCTION: {confidence_tone.get(self.confidence, '')}
 - Depth Preference: {self.depth_preference.value}
 - Accuracy: {self.accuracy_rate():.0%}
 - Topics Explored: {', '.join(self.topics_explored) if self.topics_explored else 'None yet'}
+- Known Misconceptions: {len(self.detected_misconceptions)} detected
 """
 
 

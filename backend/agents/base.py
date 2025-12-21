@@ -1,7 +1,7 @@
 """
 PragnaPath - Base Agent Class
 Foundation for all PragnaPath agents using Google ADK patterns.
-Supports both Gemini (for demo) and Groq (for development).
+Supports Groq, Gemini, and OpenRouter.
 """
 
 import os
@@ -10,12 +10,19 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 from dotenv import load_dotenv
 
-load_dotenv()
+# Force reload of .env file
+load_dotenv(override=True)
 
 # Check which API to use
-USE_GROQ = os.getenv("USE_GROQ", "true").lower() == "true"
+USE_OPENROUTER = os.getenv("USE_OPENROUTER", "false").lower() == "true"
+USE_GROQ = os.getenv("USE_GROQ", "false").lower() == "true"
 
-if USE_GROQ:
+# Print which provider is active (for debugging)
+print(f"🔌 API Provider: {'OpenRouter' if USE_OPENROUTER else 'Groq' if USE_GROQ else 'Gemini'}")
+
+if USE_OPENROUTER:
+    from openai import OpenAI
+elif USE_GROQ:
     from groq import Groq
 else:
     from google import genai
@@ -37,8 +44,19 @@ class BaseAgent(ABC):
         self.name = name
         self.description = description
         self.use_groq = USE_GROQ
+        self.use_openrouter = USE_OPENROUTER
         
-        if self.use_groq:
+        if self.use_openrouter:
+            # OpenRouter for flexible model access
+            self.model = model or os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-r1-0528:free")
+            api_key = os.getenv("OPENROUTER_API_KEY")
+            if not api_key:
+                raise ValueError("OPENROUTER_API_KEY required. Get at https://openrouter.ai/keys")
+            self.client = OpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=api_key
+            )
+        elif self.use_groq:
             # Groq for development (fast & free)
             self.model = model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
             api_key = os.getenv("GROQ_API_KEY")
@@ -82,11 +100,11 @@ class BaseAgent(ABC):
         max_tokens: int = 2048
     ) -> str:
         """
-        Generate a response using LLM (Groq or Gemini).
+        Generate a response using LLM (Groq, Gemini, or OpenRouter).
         """
         try:
-            if self.use_groq:
-                # Groq API
+            if self.use_openrouter or self.use_groq:
+                # OpenRouter and Groq both use OpenAI-compatible API
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=[
@@ -119,7 +137,7 @@ class BaseAgent(ABC):
         temperature: float = 0.3
     ) -> str:
         """
-        Generate a JSON response using LLM (Groq or Gemini).
+        Generate a JSON response using LLM (Groq, Gemini, or OpenRouter).
         """
         json_instruction = (system_instruction or self._system_instruction) + """
 
@@ -127,7 +145,24 @@ IMPORTANT: Respond ONLY with valid JSON. No markdown, no code blocks, no explana
 Start directly with { and end with }."""
         
         try:
-            if self.use_groq:
+            if self.use_openrouter:
+                # OpenRouter API (OpenAI-compatible, but not all models support response_format)
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": json_instruction},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=temperature,
+                    max_tokens=2048
+                )
+                result = response.choices[0].message.content
+                # Clean up response - remove markdown code blocks if present
+                if result.startswith("```"):
+                    lines = result.split("\n")
+                    result = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+                return result.strip()
+            elif self.use_groq:
                 # Groq API
                 response = self.client.chat.completions.create(
                     model=self.model,

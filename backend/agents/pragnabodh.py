@@ -228,6 +228,356 @@ CS_DIAGNOSTICS = {
             "topic": "Algorithms",
             "concept_tested": "Search Algorithms"
         }
+    ],
+    
+    # Hash Tables specific questions
+    "hash_tables": [
+        {
+            "id": "ht_1",
+            "question": "What is the primary purpose of a hash function?",
+            "options": [
+                "To encrypt data for security",
+                "To map keys to array indices efficiently",
+                "To sort data in order",
+                "To compress data"
+            ],
+            "correct_answer": 1,
+            "difficulty": "easy",
+            "topic": "Hash Tables",
+            "concept_tested": "Hash Function Purpose"
+        },
+        {
+            "id": "ht_2",
+            "question": "What is a 'collision' in the context of hash tables?",
+            "options": [
+                "When two hash tables merge",
+                "When two different keys hash to the same index",
+                "When the hash table runs out of memory",
+                "When a key cannot be found"
+            ],
+            "correct_answer": 1,
+            "difficulty": "medium",
+            "topic": "Hash Tables",
+            "concept_tested": "Collision Understanding"
+        },
+        {
+            "id": "ht_3",
+            "question": "When learning new concepts, I prefer to:",
+            "options": [
+                "Start with real-world examples like a phone directory",
+                "See diagrams showing how data is stored",
+                "Learn the mathematical hash function first",
+                "Practice coding hash table operations"
+            ],
+            "correct_answer": 0,
+            "difficulty": "easy",
+            "topic": "Meta",
+            "concept_tested": "Learning Style Detection"
+        },
+        {
+            "id": "ht_4",
+            "question": "What is the average time complexity for insertion in a hash table?",
+            "options": ["O(n)", "O(log n)", "O(1)", "O(n²)"],
+            "correct_answer": 2,
+            "difficulty": "medium",
+            "topic": "Hash Tables",
+            "concept_tested": "Time Complexity"
+        },
+        {
+            "id": "ht_5",
+            "question": "Which collision resolution technique uses linked lists at each bucket?",
+            "options": [
+                "Linear Probing",
+                "Quadratic Probing",
+                "Separate Chaining",
+                "Double Hashing"
+            ],
+            "correct_answer": 2,
+            "difficulty": "hard",
+            "topic": "Hash Tables",
+            "concept_tested": "Collision Resolution"
+        }
+    ],
+    
+    # Dynamic Programming specific questions
+    "dynamic_programming": [
+        {
+            "id": "dp_1",
+            "question": "What is the key idea behind dynamic programming?",
+            "options": [
+                "Always use recursion for everything",
+                "Store and reuse solutions to overlapping subproblems",
+                "Divide problems into completely independent parts",
+                "Use random choices at each step"
+            ],
+            "correct_answer": 1,
+            "difficulty": "medium",
+            "topic": "Dynamic Programming",
+            "concept_tested": "Core Concept"
+        },
+        {
+            "id": "dp_2",
+            "question": "What are the two main properties required for a problem to be solved with DP?",
+            "options": [
+                "Sorting and searching",
+                "Optimal substructure and overlapping subproblems",
+                "Linear time and constant space",
+                "Recursion and iteration"
+            ],
+            "correct_answer": 1,
+            "difficulty": "hard",
+            "topic": "Dynamic Programming",
+            "concept_tested": "DP Properties"
+        },
+        {
+            "id": "dp_3",
+            "question": "Which approach builds solutions from smaller to larger subproblems?",
+            "options": [
+                "Top-down with memoization",
+                "Bottom-up tabulation",
+                "Divide and conquer",
+                "Greedy algorithm"
+            ],
+            "correct_answer": 1,
+            "difficulty": "medium",
+            "topic": "Dynamic Programming",
+            "concept_tested": "DP Approaches"
+        },
+        {
+            "id": "dp_4",
+            "question": "I understand concepts best when:",
+            "options": [
+                "Someone shows me how it applies to real-life, like saving money",
+                "I see a table being filled step by step",
+                "I memorize the recurrence relation formula",
+                "I solve many practice problems"
+            ],
+            "correct_answer": 0,
+            "difficulty": "easy",
+            "topic": "Meta",
+            "concept_tested": "Learning Style Detection"
+        },
+        {
+            "id": "dp_5",
+            "question": "The Fibonacci sequence is a classic example of DP because:",
+            "options": [
+                "It uses arrays",
+                "Each number depends on previously computed numbers (overlapping subproblems)",
+                "It requires sorting",
+                "It has exponential time complexity"
+            ],
+            "correct_answer": 1,
+            "difficulty": "easy",
+            "topic": "Dynamic Programming",
+            "concept_tested": "Classic DP Example"
+        }
+    ],
+    
+    # Sorting Algorithms specific questions
+    "sorting_algorithms": [
+        {
+            "id": "sort_1",
+            "question": "Which sorting algorithm has the best average-case time complexity?",
+            "options": ["Bubble Sort O(n²)", "Quick Sort O(n log n)", "Selection Sort O(n²)", "Insertion Sort O(n²)"],
+            "correct_answer": 1,
+            "difficulty": "easy",
+            "topic": "Sorting Algorithms",
+            "concept_tested": "Time Complexity"
+        },
+        {
+            "id": "sort_2",
+            "question": "What is the key operation in Merge Sort?",
+            "options": [
+                "Swapping adjacent elements",
+                "Finding the minimum element",
+                "Merging two sorted halves",
+                "Partitioning around a pivot"
+            ],
+            "correct_answer": 2,
+            "difficulty": "medium",
+            "topic": "Sorting Algorithms",
+            "concept_tested": "Merge Sort"
+        },
+        {
+            "id": "sort_3",
+            "question": "Which sorting algorithm is best for nearly sorted data?",
+            "options": [
+                "Quick Sort",
+                "Heap Sort",
+                "Insertion Sort",
+                "Selection Sort"
+            ],
+            "correct_answer": 2,
+            "difficulty": "medium",
+            "topic": "Sorting Algorithms",
+            "concept_tested": "Algorithm Selection"
+        },
+        {
+            "id": "sort_4",
+            "question": "When studying sorting, I prefer:",
+            "options": [
+                "Seeing cards being sorted on a table as an analogy",
+                "Watching animated visualizations",
+                "Learning the pseudocode first",
+                "Implementing it in code immediately"
+            ],
+            "correct_answer": 0,
+            "difficulty": "easy",
+            "topic": "Meta",
+            "concept_tested": "Learning Style Detection"
+        },
+        {
+            "id": "sort_5",
+            "question": "What makes Quick Sort 'quick' in practice despite O(n²) worst case?",
+            "options": [
+                "It uses less memory",
+                "Good pivot selection gives O(n log n) average case with excellent cache performance",
+                "It's always stable",
+                "It works on linked lists better"
+            ],
+            "correct_answer": 1,
+            "difficulty": "hard",
+            "topic": "Sorting Algorithms",
+            "concept_tested": "Quick Sort Analysis"
+        }
+    ],
+    
+    # Trees specific questions  
+    "trees": [
+        {
+            "id": "tree_1",
+            "question": "What is the maximum number of children a node can have in a binary tree?",
+            "options": ["1", "2", "3", "Unlimited"],
+            "correct_answer": 1,
+            "difficulty": "easy",
+            "topic": "Trees",
+            "concept_tested": "Binary Tree Definition"
+        },
+        {
+            "id": "tree_2",
+            "question": "In a Binary Search Tree (BST), where are smaller values stored relative to the parent?",
+            "options": [
+                "Always on the right",
+                "Always on the left",
+                "At random positions",
+                "At the root"
+            ],
+            "correct_answer": 1,
+            "difficulty": "easy",
+            "topic": "Trees",
+            "concept_tested": "BST Property"
+        },
+        {
+            "id": "tree_3",
+            "question": "What is the time complexity of searching in a balanced BST?",
+            "options": ["O(1)", "O(log n)", "O(n)", "O(n²)"],
+            "correct_answer": 1,
+            "difficulty": "medium",
+            "topic": "Trees",
+            "concept_tested": "BST Complexity"
+        },
+        {
+            "id": "tree_4",
+            "question": "When learning about trees, I prefer:",
+            "options": [
+                "Relating it to family trees or organizational charts",
+                "Drawing the tree structure visually",
+                "Learning the formal definitions and properties",
+                "Coding traversal algorithms right away"
+            ],
+            "correct_answer": 0,
+            "difficulty": "easy",
+            "topic": "Meta",
+            "concept_tested": "Learning Style Detection"
+        },
+        {
+            "id": "tree_5",
+            "question": "Which traversal visits the root node first?",
+            "options": [
+                "In-order traversal",
+                "Post-order traversal",
+                "Pre-order traversal",
+                "Level-order traversal"
+            ],
+            "correct_answer": 2,
+            "difficulty": "medium",
+            "topic": "Trees",
+            "concept_tested": "Tree Traversal"
+        }
+    ],
+    
+    # Process Scheduling specific questions
+    "process_scheduling": [
+        {
+            "id": "ps_1",
+            "question": "What is the main goal of CPU scheduling?",
+            "options": [
+                "To use as much memory as possible",
+                "To maximize CPU utilization and throughput",
+                "To run only one process at a time",
+                "To prevent all context switches"
+            ],
+            "correct_answer": 1,
+            "difficulty": "easy",
+            "topic": "Process Scheduling",
+            "concept_tested": "Scheduling Goals"
+        },
+        {
+            "id": "ps_2",
+            "question": "In Round Robin scheduling, what happens when a process's time quantum expires?",
+            "options": [
+                "The process is terminated",
+                "The process is moved to the end of the ready queue",
+                "The process gets more time",
+                "The system crashes"
+            ],
+            "correct_answer": 1,
+            "difficulty": "medium",
+            "topic": "Process Scheduling",
+            "concept_tested": "Round Robin"
+        },
+        {
+            "id": "ps_3",
+            "question": "Which scheduling algorithm can lead to starvation?",
+            "options": [
+                "Round Robin",
+                "First Come First Serve",
+                "Priority Scheduling (without aging)",
+                "Shortest Job First"
+            ],
+            "correct_answer": 2,
+            "difficulty": "hard",
+            "topic": "Process Scheduling",
+            "concept_tested": "Scheduling Issues"
+        },
+        {
+            "id": "ps_4",
+            "question": "When learning scheduling algorithms, I prefer:",
+            "options": [
+                "Thinking of it like a queue at a restaurant or bank",
+                "Seeing Gantt charts and timeline diagrams",
+                "Memorizing the formulas for turnaround time",
+                "Simulating the algorithm with examples"
+            ],
+            "correct_answer": 0,
+            "difficulty": "easy",
+            "topic": "Meta",
+            "concept_tested": "Learning Style Detection"
+        },
+        {
+            "id": "ps_5",
+            "question": "What is 'context switching'?",
+            "options": [
+                "Changing the programming language",
+                "Saving and restoring process state when switching between processes",
+                "Switching between user mode and kernel mode only",
+                "Changing the CPU speed"
+            ],
+            "correct_answer": 1,
+            "difficulty": "medium",
+            "topic": "Process Scheduling",
+            "concept_tested": "Context Switch"
+        }
     ]
 }
 
@@ -290,22 +640,59 @@ Always be supportive. Frame diagnostics as "helping me understand you better".""
     def _get_diagnostic_questions(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Get diagnostic questions for a topic."""
         
-        topic = context.get("topic", "operating_systems").lower().replace(" ", "_")
+        topic = context.get("topic", "operating_systems").lower().replace(" ", "_").replace(":", "_")
         
-        # Map common topic names
+        # Map common topic names to question sets
         topic_mapping = {
+            # OS topics
             "os": "operating_systems",
+            "operating_systems": "operating_systems",
             "operating systems": "operating_systems",
+            "operating_systems__deadlock": "operating_systems",
+            "operating_systems_deadlock": "operating_systems",
             "deadlock": "operating_systems",
+            
+            # Process scheduling - now has its own set
+            "process_scheduling": "process_scheduling",
+            "process scheduling": "process_scheduling",
+            
+            # Data Structure topics
             "ds": "data_structures",
+            "data_structures": "data_structures", 
             "data structures": "data_structures",
+            
+            # Trees - now has its own set
+            "data_structures__trees": "trees",
+            "data_structures_trees": "trees",
+            "trees": "trees",
+            
+            # Hash tables - now has its own set
+            "hash_tables": "hash_tables",
+            "hash tables": "hash_tables",
+            
+            # Algorithm topics
             "algo": "algorithms",
             "algorithms": "algorithms",
-            "sorting": "algorithms"
+            
+            # Sorting - now has its own set
+            "sorting": "sorting_algorithms",
+            "sorting_algorithms": "sorting_algorithms",
+            "sorting algorithms": "sorting_algorithms",
+            
+            # Dynamic Programming - now has its own set
+            "dynamic_programming": "dynamic_programming",
+            "dynamic programming": "dynamic_programming",
         }
         
         normalized_topic = topic_mapping.get(topic, topic)
-        questions = CS_DIAGNOSTICS.get(normalized_topic, CS_DIAGNOSTICS["operating_systems"])
+        
+        # Try to get questions, fall back to algorithms if topic not found
+        if normalized_topic in CS_DIAGNOSTICS:
+            questions = CS_DIAGNOSTICS[normalized_topic]
+        else:
+            # Default to algorithms for any unknown topic
+            questions = CS_DIAGNOSTICS["algorithms"]
+            normalized_topic = "algorithms"
         
         return {
             "questions": [DiagnosticQuestion(**q) for q in questions],

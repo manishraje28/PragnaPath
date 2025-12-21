@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle, XCircle, ArrowRight, Clock, Brain, Loader2 } from 'lucide-react';
 import { startDiagnostic, submitAnswer, completeDiagnostic } from '../api';
 
-export default function DiagnosticFlow({ sessionId, topic, onComplete, onAgentChange }) {
+export default function DiagnosticFlow({ sessionId, topic, onComplete, onAgentChange, addTrace }) {
   const [questions, setQuestions] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState([]);
@@ -22,10 +22,12 @@ export default function DiagnosticFlow({ sessionId, topic, onComplete, onAgentCh
     const loadDiagnostic = async () => {
       try {
         onAgentChange('pragnabodh');
+        if (addTrace) addTrace('pragnabodh', 'Starting diagnostic assessment', topic, 'in-progress');
         const data = await startDiagnostic(sessionId, topic);
         setQuestions(data.questions);
         setLoading(false);
         startTimeRef.current = Date.now();
+        if (addTrace) addTrace('pragnabodh', 'Diagnostic ready', `${data.questions.length} questions loaded`);
         onAgentChange(null);
       } catch (error) {
         console.error('Failed to load diagnostic:', error);
@@ -45,6 +47,7 @@ export default function DiagnosticFlow({ sessionId, topic, onComplete, onAgentCh
     
     try {
       onAgentChange('pragnabodh');
+      if (addTrace) addTrace('pragnabodh', 'Processing answer', `Q${currentIndex + 1}`, 'in-progress', true);
       const result = await submitAnswer(
         sessionId,
         questions[currentIndex].id,
@@ -59,6 +62,7 @@ export default function DiagnosticFlow({ sessionId, topic, onComplete, onAgentCh
         profile: result.updated_profile,
       });
       setShowFeedback(true);
+      if (addTrace) addTrace('pragnabodh', 'Answer processed', result.is_correct ? 'Correct' : 'Incorrect');
       onAgentChange(null);
       
       // Store answer
@@ -84,10 +88,12 @@ export default function DiagnosticFlow({ sessionId, topic, onComplete, onAgentCh
       // Complete diagnostic
       try {
         onAgentChange('pragnabodh');
+        if (addTrace) addTrace('pragnabodh', 'Building learner profile', 'Analyzing responses', 'in-progress');
         const result = await completeDiagnostic(sessionId);
         setInsights(result.insights);
         setFinalProfile(result.profile);
         setIsComplete(true);
+        if (addTrace) addTrace('pragnabodh', 'Profile built', `Style: ${result.profile?.learning_style}`);
         onAgentChange(null);
       } catch (error) {
         console.error('Failed to complete diagnostic:', error);

@@ -13,18 +13,30 @@ import {
   Lightbulb,
   AlertCircle,
   CheckCircle,
-  Loader2
+  Loader2,
+  Image,
+  MessageSquare,
+  Hand
 } from 'lucide-react';
-import { getExplanation, getReExplanation, generateContent, transformAccessibility } from '../api';
+import { getExplanation, getReExplanation, generateContent, transformAccessibility, getVisualization, getSignLanguageScripts, submitMCQAnswer, checkMisconceptions } from '../api';
 import ProfileCard from './ProfileCard';
+import ProfileComparison from './ProfileComparison';
+import InteractiveMCQ from './InteractiveMCQ';
+import ExplainBack from './ExplainBack';
+import VisualizationRenderer from './VisualizationRenderer';
+import ErrorBoundary from './ErrorBoundary';
+import AdvancedFeatures from './AdvancedFeatures';
+import MisconceptionAlert from './MisconceptionAlert';
 
 export default function LearningView({ 
   sessionId, 
   topic, 
   profile, 
+  previousProfile,
   onProfileUpdate, 
   onAgentChange,
-  adaptationCount 
+  adaptationCount,
+  addTrace
 }) {
   const [explanation, setExplanation] = useState(null);
   const [previousExplanation, setPreviousExplanation] = useState(null);
@@ -32,19 +44,27 @@ export default function LearningView({
   const [reExplaining, setReExplaining] = useState(false);
   const [generatedContent, setGeneratedContent] = useState(null);
   const [accessibleContent, setAccessibleContent] = useState(null);
+  const [signLanguageScripts, setSignLanguageScripts] = useState(null);
+  const [visualization, setVisualization] = useState(null);
   const [showComparison, setShowComparison] = useState(false);
   const [showPractice, setShowPractice] = useState(false);
   const [showAccessibility, setShowAccessibility] = useState(false);
-  const [previousProfile, setPreviousProfile] = useState(null);
+  const [showVisualization, setShowVisualization] = useState(false);
+  const [showProfileChange, setShowProfileChange] = useState(false);
+  const [lastTrigger, setLastTrigger] = useState(null);
+  const [oldProfile, setOldProfile] = useState(null);
   const [styleChanged, setStyleChanged] = useState(false);
+  const [misconceptionData, setMisconceptionData] = useState(null);
 
   // Load initial explanation
   useEffect(() => {
     const loadExplanation = async () => {
       try {
         onAgentChange('gurukulguide');
+        if (addTrace) addTrace('gurukulguide', 'Generating adaptive explanation', null, 'in-progress');
         const data = await getExplanation(sessionId, topic);
         setExplanation(data.explanation);
+        if (addTrace) addTrace('gurukulguide', 'Explanation generated', `Style: ${data.style_used}`);
         setLoading(false);
         onAgentChange(null);
       } catch (error) {
@@ -60,13 +80,16 @@ export default function LearningView({
   const handleReExplain = async (trigger = 'user_request') => {
     setReExplaining(true);
     setPreviousExplanation(explanation);
-    setPreviousProfile(profile);
+    setOldProfile(profile);
+    setLastTrigger(trigger);
     
     try {
       onAgentChange('pragnabodh');
+      if (addTrace) addTrace('pragnabodh', 'Analyzing learner signal', `Trigger: ${trigger}`, 'in-progress', true);
       await new Promise(r => setTimeout(r, 500)); // Brief pause for effect
       
       onAgentChange('gurukulguide');
+      if (addTrace) addTrace('gurukulguide', 'Regenerating with adapted style', null, 'in-progress');
       const data = await getReExplanation(sessionId, topic, trigger);
       
       setExplanation(data.explanation);
@@ -74,15 +97,141 @@ export default function LearningView({
       setShowComparison(true);
       
       if (data.new_profile) {
-        onProfileUpdate(data.new_profile);
+        onProfileUpdate(data.new_profile, trigger);
+        setShowProfileChange(true);
+        setTimeout(() => setShowProfileChange(false), 5000);
       }
       
+      if (addTrace) addTrace('gurukulguide', 'Explanation adapted', `New style: ${data.style_used}`);
       onAgentChange(null);
       setReExplaining(false);
     } catch (error) {
       console.error('Failed to re-explain:', error);
       onAgentChange(null);
       setReExplaining(false);
+    }
+  };
+
+  // Generate visualization
+  const handleGenerateVisualization = async () => {
+    if (visualization) {
+      setShowVisualization(!showVisualization);
+      return;
+    }
+    
+    try {
+      onAgentChange('gurukulguide');
+      if (addTrace) addTrace('gurukulguide', 'Generating visual diagram', topic, 'in-progress');
+      const data = await getVisualization(sessionId, topic);
+      
+      // Validate we got valid data
+      if (data && (data.mermaid || data.nodes)) {
+        setVisualization(data);
+        setShowVisualization(true);
+        if (addTrace) addTrace('gurukulguide', 'Diagram generated', 'Mermaid format');
+      } else {
+        // Set a fallback diagram if data is invalid
+        setVisualization({
+          mermaid: `flowchart TD\n    A[${topic}] --> B[Key Concept]\n    B --> C[Learn More]`,
+          topic: topic,
+          type: 'mermaid',
+          fallback: true
+        });
+        setShowVisualization(true);
+        if (addTrace) addTrace('gurukulguide', 'Diagram generated', 'Fallback mode');
+      }
+      onAgentChange(null);
+    } catch (error) {
+      console.error('Failed to generate visualization:', error);
+      // Still show a fallback diagram instead of nothing
+      setVisualization({
+        mermaid: `flowchart TD\n    A[${topic}] --> B[Explore]\n    B --> C[Practice]\n    C --> D[Master]`,
+        topic: topic,
+        type: 'mermaid',
+        fallback: true
+      });
+      setShowVisualization(true);
+      if (addTrace) addTrace('gurukulguide', 'Diagram fallback', 'Using default', 'completed');
+      onAgentChange(null);
+    }
+  };
+
+  // Handle MCQ answer submission with profile update
+  const handleMCQSubmit = async (result) => {
+    try {
+      if (addTrace) addTrace('vidyaforge', 'Processing MCQ answer', result.isCorrect ? 'Correct' : 'Incorrect');
+      const response = await submitMCQAnswer(sessionId, result);
+      
+      if (response.profile_updated) {
+        setOldProfile(response.previous_profile);
+        onProfileUpdate(response.updated_profile, 'mcq_incorrect');
+        setLastTrigger('mcq_incorrect');
+        setShowProfileChange(true);
+        if (addTrace) addTrace('pragnabodh', 'Profile adapted', response.change_reasons?.join(', '), 'completed', true);
+        setTimeout(() => setShowProfileChange(false), 5000);
+      }
+
+      // Check for misconceptions on wrong answer
+      if (!result.isCorrect && result.selectedAnswer) {
+        try {
+          if (addTrace) addTrace('pragnabodh', 'Analyzing incorrect response', null, 'in-progress');
+          const misconceptionResult = await checkMisconceptions(
+            sessionId,
+            topic,
+            `Question: ${result.question || ''}\nSelected: ${result.selectedAnswer}\nCorrect: ${result.correctAnswer}`,
+            'mcq'
+          );
+          
+          if (misconceptionResult.misconception_detected) {
+            setMisconceptionData({
+              misconception: misconceptionResult.misconception,
+              correction: misconceptionResult.correction,
+              confidence: profile?.confidence || 50
+            });
+            if (addTrace) addTrace('pragnabodh', 'Misconception identified', misconceptionResult.misconception);
+          }
+        } catch (error) {
+          console.error('Error checking misconceptions:', error);
+        }
+      }
+    } catch (error) {
+      console.error('Error submitting MCQ:', error);
+    }
+  };
+
+  // Handle explain-back evaluation complete
+  const handleExplainBackComplete = async (evaluation) => {
+    if (addTrace) addTrace('pragnabodh', 'Evaluated explanation', `Understanding: ${evaluation.understanding}`);
+    
+    if (evaluation.profile_updated) {
+      setOldProfile(evaluation.previous_profile);
+      setLastTrigger('explain_back_incorrect');
+      setShowProfileChange(true);
+      setTimeout(() => setShowProfileChange(false), 5000);
+    }
+
+    // Check for misconceptions if understanding is low
+    if (evaluation.understanding === 'poor' || evaluation.understanding === 'partial') {
+      try {
+        if (addTrace) addTrace('pragnabodh', 'Checking for misconceptions', null, 'in-progress');
+        const misconceptionResult = await checkMisconceptions(
+          sessionId, 
+          topic, 
+          evaluation.learner_input || '', 
+          'explain_back'
+        );
+        
+        if (misconceptionResult.misconception_detected) {
+          setMisconceptionData({
+            misconception: misconceptionResult.misconception,
+            correction: misconceptionResult.correction,
+            confidence: profile?.confidence || 50
+          });
+          if (addTrace) addTrace('pragnabodh', 'Misconception detected', misconceptionResult.misconception);
+        }
+      } catch (error) {
+        console.error('Error checking misconceptions:', error);
+      }
     }
   };
 
@@ -95,9 +244,11 @@ export default function LearningView({
     
     try {
       onAgentChange('vidyaforge');
+      if (addTrace) addTrace('vidyaforge', 'Generating practice content', 'MCQs + Flashcards', 'in-progress');
       const data = await generateContent(sessionId, topic);
       setGeneratedContent(data.content);
       setShowPractice(true);
+      if (addTrace) addTrace('vidyaforge', 'Content generated', `${data.content?.mcqs?.length || 0} MCQs, ${data.content?.flashcards?.length || 0} flashcards`);
       onAgentChange(null);
     } catch (error) {
       console.error('Failed to generate content:', error);
@@ -114,9 +265,34 @@ export default function LearningView({
     
     try {
       onAgentChange('sarvshiksha');
-      const data = await transformAccessibility(explanation?.content || '', 'all');
-      setAccessibleContent(data.accessible_content);
+      if (addTrace) addTrace('sarvshiksha', 'Transforming for accessibility', 'All modes', 'in-progress');
+      
+      const contentToTransform = explanation?.content || 'No content available';
+      
+      // Fetch both in parallel but handle errors gracefully
+      let accessData = { accessible_content: {} };
+      let signData = { sign_language_phrases: [], phrase_count: 0 };
+      
+      try {
+        const results = await Promise.allSettled([
+          transformAccessibility(contentToTransform, 'all'),
+          getSignLanguageScripts(contentToTransform)
+        ]);
+        
+        if (results[0].status === 'fulfilled') {
+          accessData = results[0].value;
+        }
+        if (results[1].status === 'fulfilled') {
+          signData = results[1].value;
+        }
+      } catch (innerError) {
+        console.error('Error in accessibility transform:', innerError);
+      }
+      
+      setAccessibleContent(accessData.accessible_content || accessData);
+      setSignLanguageScripts(signData);
       setShowAccessibility(true);
+      if (addTrace) addTrace('sarvshiksha', 'Accessibility content ready', `${signData?.phrase_count || 0} sign-ready phrases`);
       onAgentChange(null);
     } catch (error) {
       console.error('Failed to transform content:', error);
@@ -142,6 +318,18 @@ export default function LearningView({
 
   return (
     <div className="max-w-4xl mx-auto py-8 ml-72"> {/* Offset for sidebar */}
+      {/* Profile Change Alert */}
+      <AnimatePresence>
+        {showProfileChange && oldProfile && (
+          <ProfileComparison
+            previousProfile={oldProfile}
+            currentProfile={profile}
+            trigger={lastTrigger}
+            onClose={() => setShowProfileChange(false)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Topic Header */}
       <div className="mb-8">
         <motion.div
@@ -243,22 +431,61 @@ export default function LearningView({
         )}
       </motion.div>
 
+      {/* Advanced Learning Features */}
+      <div className="mb-6">
+        <AdvancedFeatures
+          sessionId={sessionId}
+          topic={topic}
+          addTrace={addTrace}
+        />
+      </div>
+
+      {/* Misconception Alert */}
+      <AnimatePresence>
+        {misconceptionData && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="mb-6"
+          >
+            <MisconceptionAlert
+              misconception={misconceptionData.misconception}
+              correction={misconceptionData.correction}
+              confidence={misconceptionData.confidence}
+              onDismiss={() => setMisconceptionData(null)}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Action Buttons */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {/* Re-explain Button (THE KEY DEMO BUTTON) */}
         <motion.button
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={() => handleReExplain('struggling')}
           disabled={reExplaining}
-          className="flex items-center justify-center space-x-2 bg-gradient-to-r from-saffron-500 to-saffron-600 text-white px-6 py-4 rounded-xl font-medium shadow-lg shadow-saffron-500/25 hover:shadow-xl transition-all disabled:opacity-50"
+          className="flex items-center justify-center space-x-2 bg-gradient-to-r from-saffron-500 to-saffron-600 text-white px-4 py-3 rounded-xl font-medium shadow-lg shadow-saffron-500/25 hover:shadow-xl transition-all disabled:opacity-50"
         >
           {reExplaining ? (
-            <Loader2 size={20} className="animate-spin" />
+            <Loader2 size={18} className="animate-spin" />
           ) : (
-            <RefreshCw size={20} />
+            <RefreshCw size={18} />
           )}
-          <span>I'm Struggling - Explain Differently</span>
+          <span className="text-sm">Explain Differently</span>
+        </motion.button>
+
+        {/* Generate Visualization */}
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={handleGenerateVisualization}
+          className="flex items-center justify-center space-x-2 bg-white text-gray-700 px-4 py-3 rounded-xl font-medium border border-gray-200 hover:bg-gray-50 transition-all"
+        >
+          <Image size={18} />
+          <span className="text-sm">{showVisualization ? 'Hide' : 'Show'} Diagram</span>
         </motion.button>
 
         {/* Generate Practice */}
@@ -266,11 +493,10 @@ export default function LearningView({
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={handleGenerateContent}
-          className="flex items-center justify-center space-x-2 bg-white text-gray-700 px-6 py-4 rounded-xl font-medium border border-gray-200 hover:bg-gray-50 transition-all"
+          className="flex items-center justify-center space-x-2 bg-white text-gray-700 px-4 py-3 rounded-xl font-medium border border-gray-200 hover:bg-gray-50 transition-all"
         >
-          <FileText size={20} />
-          <span>{showPractice ? 'Hide' : 'Generate'} Practice Content</span>
-          {showPractice ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          <FileText size={18} />
+          <span className="text-sm">{showPractice ? 'Hide' : 'Practice'} MCQs</span>
         </motion.button>
 
         {/* Accessibility */}
@@ -278,12 +504,46 @@ export default function LearningView({
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={handleAccessibility}
-          className="flex items-center justify-center space-x-2 bg-white text-gray-700 px-6 py-4 rounded-xl font-medium border border-gray-200 hover:bg-gray-50 transition-all"
+          className="flex items-center justify-center space-x-2 bg-white text-gray-700 px-4 py-3 rounded-xl font-medium border border-gray-200 hover:bg-gray-50 transition-all"
         >
-          <Accessibility size={20} />
-          <span>{showAccessibility ? 'Hide' : 'Get'} Accessible Version</span>
-          {showAccessibility ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          <Accessibility size={18} />
+          <span className="text-sm">{showAccessibility ? 'Hide' : 'Accessible'}</span>
         </motion.button>
+      </div>
+
+      {/* Visualization Panel */}
+      <AnimatePresence>
+        {showVisualization && visualization && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mb-6"
+          >
+            <ErrorBoundary 
+              fallbackTitle="Diagram Error"
+              fallbackMessage="Failed to render the diagram. Click try again or regenerate."
+              onReset={() => setShowVisualization(false)}
+            >
+              <VisualizationRenderer
+                visualizationData={visualization}
+                topic={topic}
+                onRegenerate={handleGenerateVisualization}
+              />
+            </ErrorBoundary>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Explain Back Section */}
+      <div className="mb-6">
+        <ExplainBack
+          sessionId={sessionId}
+          topic={topic}
+          onEvaluationComplete={handleExplainBackComplete}
+          onProfileUpdate={onProfileUpdate}
+          onRequestReExplanation={handleReExplain}
+        />
       </div>
 
       {/* Comparison View (Before/After) */}
@@ -351,50 +611,55 @@ export default function LearningView({
           >
             <div className="card">
               <h3 className="font-display font-semibold text-lg text-gray-900 mb-4">
-                📚 Practice Content
+                📚 Interactive Practice
               </h3>
 
               {/* Summary */}
               <div className="mb-6">
-                <h4 className="font-medium text-gray-800 mb-2">Summary</h4>
+                <h4 className="font-medium text-gray-800 mb-2">Quick Summary</h4>
                 <p className="text-gray-600 bg-gray-50 p-4 rounded-lg">
                   {generatedContent.summary}
                 </p>
               </div>
 
-              {/* MCQs */}
-              <div className="mb-6">
-                <h4 className="font-medium text-gray-800 mb-3">Practice Questions</h4>
-                <div className="space-y-4">
-                  {generatedContent.mcqs?.slice(0, 3).map((mcq, index) => (
-                    <div key={index} className="bg-gray-50 p-4 rounded-lg">
-                      <p className="font-medium text-gray-800 mb-2">
-                        {index + 1}. {mcq.question}
-                      </p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {mcq.options.map((opt, i) => (
-                          <div key={i} className="text-sm text-gray-600 bg-white p-2 rounded">
-                            {String.fromCharCode(65 + i)}. {opt}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+              {/* Interactive MCQs */}
+              {generatedContent.mcqs && generatedContent.mcqs.length > 0 && (
+                <div className="mb-6">
+                  <h4 className="font-medium text-gray-800 mb-3 flex items-center space-x-2">
+                    <span>🎯 Practice Questions</span>
+                    <span className="text-xs bg-saffron-100 text-saffron-700 px-2 py-0.5 rounded-full">
+                      Interactive
+                    </span>
+                  </h4>
+                  <InteractiveMCQ
+                    mcqs={generatedContent.mcqs}
+                    sessionId={sessionId}
+                    topic={topic}
+                    onAnswerSubmit={handleMCQSubmit}
+                    onProfileUpdate={onProfileUpdate}
+                    onRequestReExplanation={handleReExplain}
+                  />
                 </div>
-              </div>
+              )}
 
               {/* Flashcards */}
-              <div>
-                <h4 className="font-medium text-gray-800 mb-3">Flashcards</h4>
-                <div className="grid md:grid-cols-3 gap-3">
-                  {generatedContent.flashcards?.map((card, index) => (
-                    <div key={index} className="bg-gradient-to-br from-peacock-50 to-peacock-100 p-4 rounded-lg">
-                      <p className="font-medium text-peacock-800 mb-2">{card.front}</p>
-                      <p className="text-sm text-peacock-600">{card.back}</p>
-                    </div>
-                  ))}
+              {generatedContent.flashcards && generatedContent.flashcards.length > 0 && (
+                <div>
+                  <h4 className="font-medium text-gray-800 mb-3">📇 Flashcards</h4>
+                  <div className="grid md:grid-cols-3 gap-3">
+                    {generatedContent.flashcards.map((card, index) => (
+                      <motion.div 
+                        key={index} 
+                        className="bg-gradient-to-br from-peacock-50 to-peacock-100 p-4 rounded-lg cursor-pointer hover:shadow-md transition-shadow"
+                        whileHover={{ scale: 1.02 }}
+                      >
+                        <p className="font-medium text-peacock-800 mb-2">{card.front}</p>
+                        <p className="text-sm text-peacock-600">{card.back}</p>
+                      </motion.div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </motion.div>
         )}
@@ -416,20 +681,66 @@ export default function LearningView({
 
               <div className="space-y-4">
                 {/* Dyslexia-friendly */}
-                <div className="bg-amber-50 p-4 rounded-lg">
-                  <h4 className="font-medium text-amber-800 mb-2">Dyslexia-Friendly</h4>
-                  <p className="text-amber-700 whitespace-pre-line leading-loose" style={{ fontFamily: 'OpenDyslexic, sans-serif' }}>
-                    {accessibleContent.dyslexia_friendly}
-                  </p>
-                </div>
+                {accessibleContent.dyslexia_friendly && (
+                  <div className="bg-amber-50 p-4 rounded-lg">
+                    <h4 className="font-medium text-amber-800 mb-2">Dyslexia-Friendly</h4>
+                    <p className="text-amber-700 whitespace-pre-line leading-loose" style={{ fontFamily: 'OpenDyslexic, sans-serif' }}>
+                      {accessibleContent.dyslexia_friendly}
+                    </p>
+                  </div>
+                )}
 
                 {/* Simplified */}
-                <div className="bg-green-50 p-4 rounded-lg">
-                  <h4 className="font-medium text-green-800 mb-2">Simplified Version</h4>
-                  <p className="text-green-700 whitespace-pre-line">
-                    {accessibleContent.simplified_version}
-                  </p>
-                </div>
+                {accessibleContent.simplified_version && (
+                  <div className="bg-green-50 p-4 rounded-lg">
+                    <h4 className="font-medium text-green-800 mb-2">Simplified Version</h4>
+                    <p className="text-green-700 whitespace-pre-line">
+                      {accessibleContent.simplified_version}
+                    </p>
+                  </div>
+                )}
+
+                {/* Fallback if no structured content */}
+                {!accessibleContent.dyslexia_friendly && !accessibleContent.simplified_version && (
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h4 className="font-medium text-gray-800 mb-2">Accessible Version</h4>
+                    <p className="text-gray-700 whitespace-pre-line">
+                      {typeof accessibleContent === 'string' ? accessibleContent : JSON.stringify(accessibleContent, null, 2)}
+                    </p>
+                  </div>
+                )}
+
+                {/* Sign Language Scripts */}
+                {signLanguageScripts && signLanguageScripts.sign_language_phrases && Array.isArray(signLanguageScripts.sign_language_phrases) && (
+                  <div className="bg-purple-50 p-4 rounded-lg">
+                    <h4 className="font-medium text-purple-800 mb-2 flex items-center space-x-2">
+                      <Hand size={18} />
+                      <span>Sign-Language Ready Scripts</span>
+                      <span className="text-xs bg-purple-200 text-purple-700 px-2 py-0.5 rounded-full">
+                        {signLanguageScripts.phrase_count} phrases
+                      </span>
+                    </h4>
+                    <p className="text-xs text-purple-600 mb-3">
+                      Short, gesture-friendly phrases designed for sign language interpretation
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {signLanguageScripts.sign_language_phrases.map((phrase, index) => (
+                        <motion.span
+                          key={index}
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ delay: index * 0.05 }}
+                          className="inline-block bg-white text-purple-700 px-3 py-1.5 rounded-lg text-sm border border-purple-200"
+                        >
+                          {phrase}
+                        </motion.span>
+                      ))}
+                    </div>
+                    <p className="text-xs text-purple-500 mt-3 italic">
+                      ✓ Ready for integration with sign language avatar systems
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </motion.div>

@@ -35,7 +35,8 @@ from core.models import (
     LearningStyle,
     LearnerPace,
     ConfidenceLevel,
-    DepthPreference
+    DepthPreference,
+    LearningIntent
 )
 
 
@@ -596,6 +597,610 @@ async def orchestrate(request: dict):
 # ============================================
 # DEMO ENDPOINTS
 # ============================================
+
+# New request models for enhanced features
+class MCQSubmitRequest(BaseModel):
+    session_id: str
+    questionIndex: Optional[int] = None
+    question_index: Optional[int] = None
+    selectedAnswer: Optional[int] = None
+    selected_answer: Optional[int] = None
+    correctAnswer: Optional[int] = None
+    correct_answer: Optional[int] = None
+    isCorrect: Optional[bool] = None
+    is_correct: Optional[bool] = None
+    difficulty: str = "medium"
+    
+    @property
+    def get_is_correct(self) -> bool:
+        return self.isCorrect if self.isCorrect is not None else (self.is_correct if self.is_correct is not None else False)
+    
+    @property
+    def get_difficulty(self) -> str:
+        return self.difficulty or "medium"
+
+
+class EvaluateExplanationRequest(BaseModel):
+    session_id: str
+    topic: str
+    learner_explanation: str
+
+
+class VisualizationRequest(BaseModel):
+    session_id: str
+    topic: str
+    concept_key: Optional[str] = None
+
+
+# New request models for advanced features
+class SetLearningIntentRequest(BaseModel):
+    session_id: str
+    intent: str  # exam, conceptual, interview, revision
+
+
+class WhyModeRequest(BaseModel):
+    session_id: str
+    topic: str
+
+
+class CompareConceptsRequest(BaseModel):
+    session_id: str
+    topic: str
+    compare_with: Optional[str] = None  # If None, AI suggests a comparison
+
+
+class MisconceptionCheckRequest(BaseModel):
+    session_id: str
+    topic: str
+    learner_input: str  # Their explanation or wrong answer
+    input_type: str  # "explain_back" or "mcq_wrong"
+
+
+# ============================================
+# ENHANCED ENDPOINTS FOR IMPROVEMENTS
+# ============================================
+
+@app.post("/api/learning-intent")
+async def set_learning_intent(request: SetLearningIntentRequest):
+    """
+    Set the learner's intent (why they are learning).
+    This conditions all future explanations.
+    """
+    session = session_manager.get_session(request.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Map string to enum
+    intent_map = {
+        "exam": LearningIntent.EXAM,
+        "conceptual": LearningIntent.CONCEPTUAL,
+        "interview": LearningIntent.INTERVIEW,
+        "revision": LearningIntent.REVISION
+    }
+    
+    intent = intent_map.get(request.intent.lower(), LearningIntent.CONCEPTUAL)
+    session.learner_profile.learning_intent = intent
+    session_manager.update_profile(request.session_id, session.learner_profile)
+    
+    # Generate intent-specific welcome message
+    intent_messages = {
+        LearningIntent.EXAM: "📝 Got it! I'll focus on **key definitions, exam patterns, and must-know concepts** that frequently appear in tests.",
+        LearningIntent.CONCEPTUAL: "🧠 Perfect! I'll emphasize **deep understanding, intuition, and real-world analogies** so you truly grasp the concepts.",
+        LearningIntent.INTERVIEW: "💼 Understood! I'll highlight **trade-offs, edge cases, and practical applications** that interviewers love to ask about.",
+        LearningIntent.REVISION: "⚡ Quick revision mode! I'll give you **concise summaries and key points** to refresh your memory efficiently."
+    }
+    
+    return {
+        "intent": intent.value,
+        "message": intent_messages.get(intent, "Let's begin learning!"),
+        "profile": session.learner_profile.model_dump()
+    }
+
+
+@app.post("/api/why-mode")
+async def explain_why(request: WhyModeRequest):
+    """
+    WHY-DRIVEN EXPLANATION MODE
+    Explains why a concept exists, what problem it solves, and why it matters.
+    """
+    session = session_manager.get_session(request.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    gurukulguide: GurukulGuideAgent = app.state.gurukulguide
+    profile = session.learner_profile
+    
+    prompt = f"""The learner wants to understand WHY they should learn about "{request.topic}".
+
+{profile.to_context_string()}
+
+Generate a compelling "WHY" explanation that covers:
+1. 🌍 **Why does this concept exist?** - What problem in computing/real-world led to its creation?
+2. 🔧 **What problem does it solve?** - Concrete scenarios where this is essential
+3. 💥 **What breaks without it?** - Real consequences of not having/understanding this
+4. 🎯 **Why it matters for YOU** - Based on their intent ({profile.learning_intent.value}):
+   - If exam: "This appears in X% of OS exams..."
+   - If interview: "Google/Amazon frequently ask about..."
+   - If conceptual: "Understanding this unlocks..."
+   - If revision: "Key takeaway to remember..."
+
+Keep it concise but impactful (5-7 bullet points or short paragraphs).
+Use engaging language. Make them CARE about learning this."""
+
+    response = await gurukulguide.generate(prompt, temperature=0.7)
+    
+    return {
+        "topic": request.topic,
+        "why_explanation": response,
+        "intent_context": profile.learning_intent.value
+    }
+
+
+@app.post("/api/misconception-check")
+async def check_misconceptions(request: MisconceptionCheckRequest):
+    """
+    MISCONCEPTION DETECTION ENGINE
+    Analyzes learner input for common misconceptions.
+    """
+    session = session_manager.get_session(request.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    pragnabodh: PragnaBodhAgent = app.state.pragnabodh
+    gurukulguide: GurukulGuideAgent = app.state.gurukulguide
+    profile = session.learner_profile
+    
+    # Step 1: Detect misconception
+    detection_prompt = f"""Analyze this learner's input about "{request.topic}" for common misconceptions.
+
+LEARNER'S INPUT ({request.input_type}):
+"{request.learner_input}"
+
+COMMON MISCONCEPTIONS for {request.topic} that students often have:
+- Confusing similar concepts (e.g., deadlock vs starvation, stack vs heap)
+- Misunderstanding cause-effect relationships
+- Oversimplifying complex processes
+- Confusing terminology
+
+Respond with JSON:
+{{
+    "has_misconception": true/false,
+    "misconception": "Brief description of what they got wrong",
+    "confused_with": "What they might be confusing it with",
+    "severity": "low|medium|high",
+    "correct_understanding": "What they should understand instead"
+}}
+
+If no clear misconception, set has_misconception to false."""
+
+    try:
+        detection_response = await pragnabodh.generate_json(detection_prompt)
+        import json
+        detection = json.loads(detection_response)
+    except:
+        detection = {"has_misconception": False}
+    
+    if not detection.get("has_misconception", False):
+        return {
+            "has_misconception": False,
+            "message": None
+        }
+    
+    # Step 2: Generate correction with empathetic tone
+    confidence = profile.confidence
+    tone_instruction = ""
+    if confidence == ConfidenceLevel.LOW:
+        tone_instruction = "Use a very gentle, encouraging tone. Start with what they got RIGHT, then gently correct."
+    elif confidence == ConfidenceLevel.HIGH:
+        tone_instruction = "Be direct but friendly. They can handle straightforward correction."
+    else:
+        tone_instruction = "Use a balanced, supportive tone."
+    
+    correction_prompt = f"""A learner has a misconception about {request.topic}.
+
+MISCONCEPTION: {detection.get('misconception', '')}
+THEY MIGHT BE CONFUSING IT WITH: {detection.get('confused_with', '')}
+CORRECT UNDERSTANDING: {detection.get('correct_understanding', '')}
+
+{tone_instruction}
+
+Generate a helpful correction that:
+1. Acknowledges this is a common confusion ("Many learners think X, but...")
+2. Clearly explains the difference
+3. Gives a memorable way to remember the correct concept
+4. Ends with encouragement
+
+Keep it concise (3-4 sentences)."""
+
+    correction = await gurukulguide.generate(correction_prompt, temperature=0.7)
+    
+    # Store misconception in profile
+    misconception_record = {
+        "topic": request.topic,
+        "misconception": detection.get("misconception"),
+        "severity": detection.get("severity", "medium"),
+        "detected_at": datetime.now().isoformat()
+    }
+    profile.detected_misconceptions.append(misconception_record)
+    session_manager.update_profile(request.session_id, profile)
+    
+    return {
+        "has_misconception": True,
+        "misconception": detection.get("misconception"),
+        "confused_with": detection.get("confused_with"),
+        "severity": detection.get("severity"),
+        "correction": correction,
+        "tone_used": "gentle" if confidence == ConfidenceLevel.LOW else "direct" if confidence == ConfidenceLevel.HIGH else "balanced"
+    }
+
+
+@app.post("/api/compare-concepts")
+async def compare_concepts(request: CompareConceptsRequest):
+    """
+    COMPARATIVE EXPLAINER
+    Compares the current topic with a similar/confusing concept.
+    """
+    session = session_manager.get_session(request.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    gurukulguide: GurukulGuideAgent = app.state.gurukulguide
+    profile = session.learner_profile
+    
+    # If no comparison topic provided, suggest one
+    if not request.compare_with:
+        suggest_prompt = f"""For the topic "{request.topic}", what is the most commonly confused similar concept?
+        
+Examples:
+- Deadlock → Starvation
+- BFS → DFS
+- Stack → Heap  
+- Process → Thread
+- Mutex → Semaphore
+
+Return ONLY the comparison topic name, nothing else."""
+        
+        request.compare_with = await gurukulguide.generate(suggest_prompt, temperature=0.3, max_tokens=50)
+        request.compare_with = request.compare_with.strip().strip('"').strip("'")
+    
+    # Generate comparison
+    comparison_prompt = f"""Create a clear comparison between "{request.topic}" and "{request.compare_with}".
+
+{profile.to_context_string()}
+
+Format as a structured comparison that highlights:
+1. **Definition** - One-line definition of each
+2. **Key Difference** - The MAIN thing that distinguishes them
+3. **When to Use** - Scenarios where each applies
+4. **Common Confusion** - Why students mix them up
+5. **Memory Trick** - A memorable way to remember the difference
+
+Based on their learning intent ({profile.learning_intent.value}):
+- Exam: Focus on definition differences and exam-style distinctions
+- Interview: Focus on trade-offs and when to use each
+- Conceptual: Focus on underlying principles
+- Revision: Keep it very concise
+
+Use a table or bullet format for clarity."""
+
+    comparison = await gurukulguide.generate(comparison_prompt, temperature=0.6)
+    
+    return {
+        "topic": request.topic,
+        "compared_with": request.compare_with,
+        "comparison": comparison,
+        "intent_context": profile.learning_intent.value
+    }
+
+
+@app.post("/api/mcq/submit")
+async def submit_mcq_answer(request: MCQSubmitRequest):
+    """
+    Submit an MCQ answer and update learner profile based on performance.
+    Implements rule-based + AI hybrid profile adaptation.
+    """
+    session = session_manager.get_session(request.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    profile = session.learner_profile
+    old_profile = profile.model_copy()
+    
+    # Get values from either camelCase or snake_case
+    is_correct = request.get_is_correct
+    difficulty = request.get_difficulty
+    
+    # Update answer statistics
+    profile.total_answers += 1
+    if is_correct:
+        profile.correct_answers += 1
+    
+    # Rule-based profile adjustments (HYBRID AI + LOGIC)
+    profile_changed = False
+    change_reasons = []
+    
+    # Rule 1: Incorrect answer on hard question → lower confidence
+    if not is_correct and difficulty == "hard":
+        if profile.confidence == ConfidenceLevel.HIGH:
+            profile.confidence = ConfidenceLevel.MEDIUM
+            profile_changed = True
+            change_reasons.append("Hard question missed → confidence adjusted")
+        elif profile.confidence == ConfidenceLevel.MEDIUM:
+            profile.confidence = ConfidenceLevel.LOW
+            profile_changed = True
+            change_reasons.append("Hard question missed → confidence lowered")
+    
+    # Rule 2: Multiple incorrect answers → suggest step-by-step approach
+    accuracy = profile.accuracy_rate()
+    if accuracy < 0.5 and profile.total_answers >= 3:
+        if profile.depth_preference != DepthPreference.INTUITION_FIRST:
+            profile.depth_preference = DepthPreference.INTUITION_FIRST
+            profile_changed = True
+            change_reasons.append("Low accuracy → switching to intuition-first approach")
+    
+    # Rule 3: High accuracy → can handle faster pace
+    if accuracy >= 0.8 and profile.total_answers >= 3:
+        if profile.pace == LearnerPace.SLOW:
+            profile.pace = LearnerPace.MEDIUM
+            profile_changed = True
+            change_reasons.append("High accuracy → pace increased")
+        elif profile.confidence == ConfidenceLevel.LOW:
+            profile.confidence = ConfidenceLevel.MEDIUM
+            profile_changed = True
+            change_reasons.append("High accuracy → confidence boosted")
+    
+    # Update session
+    session_manager.update_profile(request.session_id, profile)
+    if profile_changed:
+        session.record_adaptation()
+        session_manager.update_session(session)
+    
+    return {
+        "is_correct": is_correct,
+        "profile_updated": profile_changed,
+        "updated_profile": profile.model_dump(),
+        "previous_profile": old_profile.model_dump(),
+        "change_reasons": change_reasons,
+        "current_accuracy": accuracy
+    }
+
+
+@app.post("/api/evaluate-explanation")
+async def evaluate_explanation(request: EvaluateExplanationRequest):
+    """
+    Evaluate a learner's explanation of a concept.
+    PragnaBodh classifies understanding as correct/partial/incorrect.
+    """
+    session = session_manager.get_session(request.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    pragnabodh: PragnaBodhAgent = app.state.pragnabodh
+    
+    # Use AI to evaluate the explanation
+    prompt = f"""You are a teacher evaluating if a student understands "{request.topic}".
+
+THE STUDENT WROTE:
+\"\"\"{request.learner_explanation}\"\"\"
+
+FIRST, determine if the student actually tried to explain {request.topic}:
+- If they wrote meta-comments like "I don't understand", "explain to me", "help", or requests instead of an explanation → mark as "not_attempted"
+- If they wrote something completely unrelated to {request.topic} → mark as "off_topic"  
+- If they actually tried to explain what {request.topic} is/means/does → evaluate their understanding
+
+CLASSIFICATION:
+- "not_attempted" - They didn't try to explain; they asked questions or made meta-comments
+- "off_topic" - They wrote about something unrelated
+- "incorrect" - They tried but fundamentally misunderstood the concept
+- "partial" - They have some understanding but missed key parts
+- "correct" - They explained the core concept accurately
+
+FEEDBACK RULES:
+- If "not_attempted": Encourage them to try explaining in their own words what {request.topic} means
+- If "off_topic": Gently redirect them to explain {request.topic}
+- If they attempted: Quote their SPECIFIC words and explain what's right/wrong
+
+Return JSON:
+{{
+    "understanding": "correct|partial|incorrect|not_attempted|off_topic",
+    "feedback": "Your personalized feedback - quote their words if they attempted",
+    "suggestions": ["suggestion 1", "suggestion 2"]
+}}"""
+
+    try:
+        response = await pragnabodh.generate_json(prompt)
+        import json
+        result = json.loads(response)
+        
+        # Validate that the result has required fields
+        if "understanding" not in result or "feedback" not in result:
+            raise ValueError("Invalid response format")
+        
+        # Map not_attempted and off_topic to "incorrect" for profile updates but keep original for display
+        display_understanding = result["understanding"]
+        profile_understanding = result["understanding"]
+        if result["understanding"] in ["not_attempted", "off_topic"]:
+            profile_understanding = "incorrect"  # For profile logic
+            
+    except Exception as e:
+        print(f"Error evaluating explanation: {e}")
+        # Fallback evaluation
+        result = {
+            "understanding": "not_attempted",
+            "feedback": f"It looks like you haven't explained {request.topic} yet. Try describing in your own words: What is {request.topic}? How does it work? Give a simple example if you can!",
+            "suggestions": [
+                f"Start by defining what {request.topic} means",
+                "Try giving a simple example from everyday life"
+            ]
+        }
+        profile_understanding = "incorrect"
+    
+    # Rule-based profile update based on understanding
+    # Use profile_understanding which maps not_attempted/off_topic to incorrect
+    eval_understanding = profile_understanding if 'profile_understanding' in dir() else result["understanding"]
+    if eval_understanding in ["not_attempted", "off_topic"]:
+        eval_understanding = "incorrect"
+    
+    profile = session.learner_profile
+    old_profile = profile.model_copy()
+    profile_changed = False
+    
+    if eval_understanding == "incorrect":
+        # Lower confidence if learner struggles to explain
+        if profile.confidence == ConfidenceLevel.HIGH:
+            profile.confidence = ConfidenceLevel.MEDIUM
+            profile_changed = True
+        elif profile.confidence == ConfidenceLevel.MEDIUM:
+            profile.confidence = ConfidenceLevel.LOW
+            profile_changed = True
+        
+        # Suggest more step-by-step approach
+        if profile.depth_preference == DepthPreference.FORMULA_FIRST:
+            profile.depth_preference = DepthPreference.INTUITION_FIRST
+            profile_changed = True
+    
+    elif eval_understanding == "correct":
+        # Boost confidence if learner explains well
+        if profile.confidence == ConfidenceLevel.LOW:
+            profile.confidence = ConfidenceLevel.MEDIUM
+            profile_changed = True
+        elif profile.confidence == ConfidenceLevel.MEDIUM:
+            profile.confidence = ConfidenceLevel.HIGH
+            profile_changed = True
+    
+    if profile_changed:
+        session_manager.update_profile(request.session_id, profile)
+        session.record_adaptation()
+        session_manager.update_session(session)
+    
+    return {
+        **result,
+        "profile_updated": profile_changed,
+        "updated_profile": profile.model_dump() if profile_changed else None,
+        "previous_profile": old_profile.model_dump() if profile_changed else None
+    }
+
+
+@app.post("/api/visualize")
+async def generate_visualization(request: VisualizationRequest):
+    """
+    Generate structured visualization data for a topic.
+    Returns Mermaid-compatible diagram code.
+    """
+    session = session_manager.get_session(request.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    gurukulguide: GurukulGuideAgent = app.state.gurukulguide
+    
+    # Generate visualization instructions using AI
+    prompt = f"""Generate a Mermaid diagram for the concept: "{request.topic}"
+
+Create a clear, educational diagram. Choose the appropriate type:
+- flowchart TD for processes/flows
+- stateDiagram-v2 for state machines
+- sequenceDiagram for interactions
+
+Return ONLY valid Mermaid code, nothing else. Keep it simple and readable.
+Maximum 10 nodes for clarity.
+
+Example formats:
+flowchart TD
+    A[Start] --> B{{Decision}}
+    B -->|Yes| C[Action 1]
+    B -->|No| D[Action 2]
+
+stateDiagram-v2
+    [*] --> State1
+    State1 --> State2: event
+    State2 --> [*]"""
+
+    try:
+        response = await gurukulguide.generate(prompt, temperature=0.3)
+        
+        # Clean up the response
+        mermaid_code = response.strip()
+        
+        # Remove markdown code blocks if present
+        if mermaid_code.startswith("```"):
+            lines = mermaid_code.split("\n")
+            mermaid_code = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
+        
+        return {
+            "mermaid": mermaid_code,
+            "topic": request.topic,
+            "type": "mermaid"
+        }
+    except Exception as e:
+        # Fallback with a simple diagram
+        fallback = f"""flowchart TD
+    A[{request.topic}] --> B[Key Concept 1]
+    A --> C[Key Concept 2]
+    B --> D[Detail 1]
+    C --> E[Detail 2]"""
+        
+        return {
+            "mermaid": fallback,
+            "topic": request.topic,
+            "type": "mermaid",
+            "fallback": True
+        }
+
+
+@app.post("/api/accessibility/sign-language")
+async def generate_sign_language_scripts(request: dict):
+    """
+    Generate sign-language-ready scripts.
+    Outputs short, gesture-friendly phrases.
+    """
+    content = request.get("content", "")
+    
+    sarvshiksha: SarvShikshaAgent = app.state.sarvshiksha
+    
+    prompt = f"""Convert this educational content into sign-language-ready phrases.
+
+CONTENT:
+{content}
+
+Requirements:
+1. Break into short, gesture-friendly phrases (3-5 words each)
+2. Use simple, concrete words
+3. Avoid idioms and abstract language
+4. Focus on the key concepts
+5. Maximum 8-10 phrases
+
+Return as JSON array:
+["phrase 1", "phrase 2", "phrase 3", ...]"""
+
+    try:
+        response = await sarvshiksha.generate_json(prompt)
+        import json
+        phrases = json.loads(response)
+        
+        # Ensure it's a list
+        if isinstance(phrases, dict) and "phrases" in phrases:
+            phrases = phrases["phrases"]
+        
+        return {
+            "sign_language_phrases": phrases,
+            "original_length": len(content),
+            "phrase_count": len(phrases),
+            "ready_for_avatar": True
+        }
+    except:
+        # Fallback: simple sentence splitting
+        import re
+        sentences = re.split(r'[.!?]+', content)
+        phrases = [s.strip()[:50] for s in sentences if s.strip()][:8]
+        
+        return {
+            "sign_language_phrases": phrases,
+            "original_length": len(content),
+            "phrase_count": len(phrases),
+            "ready_for_avatar": True,
+            "fallback": True
+        }
+
 
 @app.get("/api/demo/topics")
 async def get_demo_topics():

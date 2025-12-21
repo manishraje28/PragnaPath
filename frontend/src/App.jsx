@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Brain, Sparkles, BookOpen, Users, ArrowRight, Zap } from 'lucide-react';
 import WelcomeScreen from './components/WelcomeScreen';
@@ -7,19 +7,68 @@ import DiagnosticFlow from './components/DiagnosticFlow';
 import LearningView from './components/LearningView';
 import ProfileCard from './components/ProfileCard';
 import AgentIndicator from './components/AgentIndicator';
+import AgentTracePanel from './components/AgentTracePanel';
 import DemoMode from './components/DemoMode';
-import { startSession, getTopics } from './api';
+import LearningIntentSelector from './components/LearningIntentSelector';
+import { startSession, getTopics, getStoredSessionId, getStoredProfile, clearStoredSession } from './api';
 
 function App() {
   // App state
-  const [currentPhase, setCurrentPhase] = useState('welcome'); // welcome, topic, diagnostic, learning, demo
+  const [currentPhase, setCurrentPhase] = useState('welcome'); // welcome, topic, intent, diagnostic, learning, demo
   const [sessionId, setSessionId] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [previousProfile, setPreviousProfile] = useState(null);
   const [currentTopic, setCurrentTopic] = useState(null);
+  const [learningIntent, setLearningIntent] = useState(null);
   const [activeAgent, setActiveAgent] = useState(null);
   const [topics, setTopics] = useState([]);
   const [adaptationCount, setAdaptationCount] = useState(0);
   const [isDemoMode, setIsDemoMode] = useState(false);
+  
+  // Agent trace state for observability panel
+  const [agentTraces, setAgentTraces] = useState([]);
+  const [showTracePanel, setShowTracePanel] = useState(true);
+
+  // Add trace helper
+  const addTrace = useCallback((agent, action, output = null, status = 'completed', isLoop = false) => {
+    const trace = {
+      id: Date.now(),
+      agent,
+      action,
+      output,
+      status,
+      isLoop,
+      timestamp: new Date().toISOString()
+    };
+    setAgentTraces(prev => [...prev, trace]);
+    return trace.id;
+  }, []);
+
+  // Update trace status
+  const updateTrace = useCallback((traceId, updates) => {
+    setAgentTraces(prev => 
+      prev.map(t => t.id === traceId ? { ...t, ...updates } : t)
+    );
+  }, []);
+
+  // Restore session on mount
+  useEffect(() => {
+    const restoreSession = async () => {
+      const storedSessionId = getStoredSessionId();
+      const storedProfile = getStoredProfile();
+      
+      if (storedSessionId && storedProfile) {
+        console.log('Restoring session:', storedSessionId);
+        setSessionId(storedSessionId);
+        setProfile(storedProfile);
+        addTrace('sutradhar', 'Session restored from storage', `Session ID: ${storedSessionId}`);
+        // Go directly to topic selection since we have a session
+        setCurrentPhase('topic');
+      }
+    };
+    
+    restoreSession();
+  }, [addTrace]);
 
   // Fetch topics on mount
   useEffect(() => {
@@ -41,10 +90,26 @@ function App() {
   }, []);
 
   // Start a new session
-  const handleStartSession = async (topic = null) => {
+  const handleStartSession = async (topic = null, forceNew = false) => {
     try {
       setActiveAgent('sutradhar');
-      const data = await startSession(topic);
+      const traceId = addTrace('sutradhar', 'Initializing session...', null, 'in-progress');
+      
+      const data = await startSession(topic, forceNew);
+      
+      // If session was restored, show different message
+      if (data.restored) {
+        updateTrace(traceId, { 
+          status: 'completed', 
+          output: 'Session restored successfully' 
+        });
+      } else {
+        updateTrace(traceId, { 
+          status: 'completed', 
+          output: `New session: ${data.session_id}` 
+        });
+      }
+      
       setSessionId(data.session_id);
       setProfile(data.profile);
       setActiveAgent(null);
@@ -61,22 +126,62 @@ function App() {
     }
   };
 
+  // Handle new session (clear previous)
+  const handleNewSession = () => {
+    clearStoredSession();
+    setSessionId(null);
+    setProfile(null);
+    setLearningIntent(null);
+    setAgentTraces([]);
+    setAdaptationCount(0);
+    setCurrentPhase('welcome');
+  };
+
   // Handle topic selection
   const handleTopicSelect = (topic) => {
+    addTrace('sutradhar', 'Topic selected', topic);
     setCurrentTopic(topic);
+    setCurrentPhase('intent');  // Go to intent selection first
+  };
+
+  // Handle learning intent selection
+  const handleIntentComplete = (intent) => {
+    setLearningIntent(intent);
+    addTrace('pragnabodh', 'Learning goal set', intent);
     setCurrentPhase('diagnostic');
   };
 
   // Handle diagnostic completion
   const handleDiagnosticComplete = (newProfile, insights) => {
+    setPreviousProfile(profile);
     setProfile(newProfile);
+    addTrace('pragnabodh', 'Diagnostic complete', 'Profile built successfully');
     setCurrentPhase('learning');
   };
 
   // Handle profile update (adaptation)
-  const handleProfileUpdate = (newProfile) => {
+  const handleProfileUpdate = (newProfile, trigger = 'adaptation') => {
+    setPreviousProfile(profile);
     setProfile(newProfile);
     setAdaptationCount(prev => prev + 1);
+    addTrace('pragnabodh', 'Profile adapted', `Trigger: ${trigger}`, 'completed', true);
+  };
+
+  // Handle agent changes with tracing
+  const handleAgentChange = (agent) => {
+    if (agent && agent !== activeAgent) {
+      addTrace(agent, 'Agent activated', null, 'in-progress');
+    } else if (!agent && activeAgent) {
+      // Update the last trace for this agent
+      setAgentTraces(prev => {
+        const lastTrace = [...prev].reverse().find(t => t.agent === activeAgent && t.status === 'in-progress');
+        if (lastTrace) {
+          return prev.map(t => t.id === lastTrace.id ? { ...t, status: 'completed' } : t);
+        }
+        return prev;
+      });
+    }
+    setActiveAgent(agent);
   };
 
   // Render current phase
@@ -102,13 +207,28 @@ function App() {
           />
         );
       
+      case 'intent':
+        return (
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <div className="max-w-lg w-full">
+              <LearningIntentSelector
+                sessionId={sessionId}
+                topic={currentTopic}
+                onIntentSelected={handleIntentComplete}
+                onSkip={() => handleIntentComplete('conceptual')}
+              />
+            </div>
+          </div>
+        );
+      
       case 'diagnostic':
         return (
           <DiagnosticFlow
             sessionId={sessionId}
             topic={currentTopic}
             onComplete={handleDiagnosticComplete}
-            onAgentChange={setActiveAgent}
+            onAgentChange={handleAgentChange}
+            addTrace={addTrace}
           />
         );
       
@@ -118,9 +238,11 @@ function App() {
             sessionId={sessionId}
             topic={currentTopic}
             profile={profile}
+            previousProfile={previousProfile}
             onProfileUpdate={handleProfileUpdate}
-            onAgentChange={setActiveAgent}
+            onAgentChange={handleAgentChange}
             adaptationCount={adaptationCount}
+            addTrace={addTrace}
           />
         );
       
@@ -187,14 +309,29 @@ function App() {
 
               {/* Session ID */}
               {sessionId && (
-                <div className="text-sm text-gray-500">
-                  Session: <span className="font-mono text-gray-700">{sessionId}</span>
+                <div className="flex items-center space-x-2">
+                  <div className="text-sm text-gray-500">
+                    Session: <span className="font-mono text-gray-700">{sessionId}</span>
+                  </div>
+                  <button
+                    onClick={handleNewSession}
+                    className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded hover:bg-gray-100"
+                  >
+                    New
+                  </button>
                 </div>
               )}
             </div>
           </div>
         </div>
       </header>
+
+      {/* Agent Trace Panel */}
+      <AgentTracePanel 
+        traces={agentTraces} 
+        isExpanded={showTracePanel}
+        onToggle={() => setShowTracePanel(!showTracePanel)}
+      />
 
       {/* Profile Sidebar (when learning) */}
       <AnimatePresence>
