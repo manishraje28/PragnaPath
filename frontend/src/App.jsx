@@ -236,7 +236,7 @@ function App() {
               </span>
             </div>
             <div className="flex items-center space-x-2">
-              <span>ML Mumbai GenAI Hackathon</span>
+              <span>PragnaPath</span>
               <span className="text-saffron-500">🇮🇳</span>
             </div>
           </div>

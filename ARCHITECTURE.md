@@ -256,7 +256,7 @@ class SessionState:
 3. **Visible Adaptation**: Changes must be obvious to users
 4. **Cultural Relevance**: Indian themes are integral, not decorative
 5. **Accessibility First**: Not an afterthought
-6. **Demo Stability**: Reliable for hackathon presentation
+6. **Stability**: Reliable and production-ready
 
 ---
 
@@ -269,7 +269,3 @@ class SessionState:
 | One explanation style | Multiple styles, runtime switching |
 | No learner modeling | Cognitive profile building |
 | Add-on accessibility | Built-in accessibility agent |
-
----
-
-*Built for ML Mumbai GenAI Hackathon (Finale)*

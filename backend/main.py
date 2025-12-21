@@ -594,7 +594,7 @@ async def orchestrate(request: dict):
 
 
 # ============================================
-# DEMO ENDPOINTS (For Hackathon Presentation)
+# DEMO ENDPOINTS
 # ============================================
 
 @app.get("/api/demo/topics")

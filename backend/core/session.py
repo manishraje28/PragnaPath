@@ -11,7 +11,7 @@ from .models import SessionState, LearnerProfile
 
 class SessionManager:
     """
-    In-memory session manager for hackathon demo.
+    In-memory session manager.
     For production, replace with Redis or database.
     """
     

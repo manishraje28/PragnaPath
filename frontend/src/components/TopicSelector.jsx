@@ -82,7 +82,7 @@ export default function TopicSelector({ topics, onSelect, sessionId }) {
         className="mt-8 text-center"
       >
         <p className="text-gray-500 text-sm">
-          More topics coming soon! For the hackathon demo, these topics have been optimized.
+          More topics coming soon!
         </p>
       </motion.div>
     </div>

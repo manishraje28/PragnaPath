@@ -4,7 +4,7 @@
 
 ## 🎯 What is PragnaPath?
 
-PragnaPath is an **Indian-themed, cognitive-adaptive, multi-agent AI learning companion** built for the ML Mumbai GenAI Hackathon. Unlike generic AI tutors, PragnaPath observes how a learner thinks and **dynamically changes how it teaches**.
+PragnaPath is an **Indian-themed, cognitive-adaptive, multi-agent AI learning companion**. Unlike generic AI tutors, PragnaPath observes how a learner thinks and **dynamically changes how it teaches**.
 
 ## 🏗️ Architecture
 
@@ -109,11 +109,7 @@ PragnaPath/
 - **Agent Framework**: Google ADK
 - **Backend**: Python + FastAPI
 - **Frontend**: React + Tailwind CSS
-- **State**: Local session (hackathon-optimized)
-
-## 👥 Team
-
-Built for ML Mumbai GenAI Hackathon (Finale)
+- **State**: Local session (can be upgraded to Redis/DB for production)
 
 ---
 
