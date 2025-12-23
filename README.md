@@ -4,23 +4,23 @@
 
 ## 🎯 What is PragnaPath?
 
-PragnaPath is an **Indian-themed, cognitive-adaptive, multi-agent AI learning companion**. Unlike generic AI tutors, PragnaPath observes how a learner thinks and **dynamically changes how it teaches**.
+PragnaPath is an **Indian-themed, cognitive-adaptive, multi-agent AI learning companion** built with **Google ADK (Agent Development Kit)**. Unlike generic AI tutors, PragnaPath observes how a learner thinks and **dynamically changes how it teaches**.
 
-## 🏗️ Architecture
+## 🏗️ Architecture - Google ADK Multi-Agent System
 
-PragnaPath uses **Google ADK (Agent Development Kit)** to orchestrate 5 specialized agents:
+PragnaPath uses **[Google ADK (Agent Development Kit)](https://google.github.io/adk-docs/)** to orchestrate 5 specialized `LlmAgent` instances:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    🎛️ SUTRADHAR (Orchestrator)                  │
-│                 Central Controller & Session Manager             │
+│             Google ADK LlmAgent with sub_agents                  │
 └─────────────────────────────────────────────────────────────────┘
                                │
          ┌─────────────────────┼─────────────────────┐
          ▼                     ▼                     ▼
 ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
 │ 🧠 PRAGNABODH   │  │ 🧑‍🏫 GURUKULGUIDE│  │ 🛠️ VIDYAFORGE   │
-│ Cognitive Engine│  │ Adaptive Tutor  │  │ Content Engine  │
+│ LlmAgent        │  │ LlmAgent        │  │ LlmAgent        │
 │                 │  │                 │  │                 │
 │ • Diagnostics   │  │ • Explanations  │  │ • MCQs          │
 │ • Profile Build │  │ • Analogies     │  │ • Flashcards    │
@@ -30,12 +30,18 @@ PragnaPath uses **Google ADK (Agent Development Kit)** to orchestrate 5 speciali
                                ▼
                     ┌─────────────────┐
                     │ ♿ SARVSHIKSHA   │
-                    │ Accessibility   │
+                    │ LlmAgent        │
                     │                 │
                     │ • Dyslexia-safe │
                     │ • Screen-reader │
                     └─────────────────┘
 ```
+
+### Google ADK Features Used:
+- **`LlmAgent`** - Each agent is a Google ADK LlmAgent with custom instructions
+- **`sub_agents`** - Sutradhar orchestrates other agents via ADK's multi-agent system
+- **`Runner`** - ADK Runner manages session state and agent execution
+- **`InMemorySessionService`** - Session management for learning state
 
 ## 🌟 Key Differentiators
 
@@ -105,11 +111,18 @@ PragnaPath/
 
 ## 🛠️ Tech Stack
 
-- **AI Models**: Google Gemini Pro / Flash
-- **Agent Framework**: Google ADK
+- **AI Framework**: [Google ADK (Agent Development Kit)](https://google.github.io/adk-docs/)
+- **AI Models**: Google Gemini 2.0 Flash
 - **Backend**: Python + FastAPI
 - **Frontend**: React + Tailwind CSS
-- **State**: Local session (can be upgraded to Redis/DB for production)
+- **State**: ADK InMemorySessionService (can be upgraded to persistent storage)
+
+## 📦 Installation
+
+```bash
+# Install Google ADK
+pip install google-adk
+```
 
 ---
 

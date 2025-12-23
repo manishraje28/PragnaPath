@@ -1,38 +1,192 @@
 """
-PragnaPath - Base Agent Class
-Foundation for all PragnaPath agents using Google ADK patterns.
-Supports Groq, Gemini, and OpenRouter.
+PragnaPath - Base Agent Class with Multi-Provider Support
+=========================================================
+Foundation for all PragnaPath agents using Google ADK (Agent Development Kit)
+with fallback support for OpenRouter and Groq.
+https://google.github.io/adk-docs/
 """
 
 import os
-import asyncio
-from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+import httpx
+import json
+from typing import Any, Dict, Optional, Callable, List
 from dotenv import load_dotenv
 
-# Force reload of .env file
+# Load environment variables
 load_dotenv(override=True)
 
-# Check which API to use
+# ============================================
+# PROVIDER CONFIGURATION
+# ============================================
 USE_OPENROUTER = os.getenv("USE_OPENROUTER", "false").lower() == "true"
 USE_GROQ = os.getenv("USE_GROQ", "false").lower() == "true"
 
-# Print which provider is active (for debugging)
-print(f"🔌 API Provider: {'OpenRouter' if USE_OPENROUTER else 'Groq' if USE_GROQ else 'Gemini'}")
+# OpenRouter config
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini-2024-07-18")
 
-if USE_OPENROUTER:
-    from openai import OpenAI
-elif USE_GROQ:
-    from groq import Groq
+# Groq config
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+
+# Google/ADK config
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+
+# Determine active provider
+if USE_OPENROUTER and OPENROUTER_API_KEY:
+    ACTIVE_PROVIDER = "openrouter"
+    ACTIVE_MODEL = OPENROUTER_MODEL
+    print(f"🔌 Using OpenRouter with model: {OPENROUTER_MODEL}")
+elif USE_GROQ and GROQ_API_KEY:
+    ACTIVE_PROVIDER = "groq"
+    ACTIVE_MODEL = GROQ_MODEL
+    print(f"🔌 Using Groq with model: {GROQ_MODEL}")
+elif GOOGLE_API_KEY:
+    ACTIVE_PROVIDER = "google"
+    ACTIVE_MODEL = GEMINI_MODEL
+    os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
+    print(f"🔌 Using Google ADK with model: {GEMINI_MODEL}")
 else:
-    from google import genai
-    from google.genai import types
+    raise ValueError("No valid API key found. Set GOOGLE_API_KEY, OPENROUTER_API_KEY, or GROQ_API_KEY")
+
+# Import Google ADK (for ADK web interface and structure)
+from google.adk.agents import LlmAgent, Agent
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
+
+
+def create_llm_agent(
+    name: str,
+    instruction: str,
+    description: str = "",
+    tools: List[Callable] = None,
+    sub_agents: List[Agent] = None,
+    model: str = None
+) -> LlmAgent:
+    """
+    Factory function to create a Google ADK LlmAgent.
+    
+    Args:
+        name: Unique name for the agent
+        instruction: System instruction for the agent
+        description: Brief description of what the agent does
+        tools: List of tool functions the agent can use
+        sub_agents: List of sub-agents for multi-agent systems
+        model: LLM model to use (defaults to GEMINI_MODEL)
+    
+    Returns:
+        Configured LlmAgent instance
+    """
+    agent = LlmAgent(
+        name=name,
+        model=model or GEMINI_MODEL,
+        instruction=instruction,
+        description=description,
+        tools=tools or [],
+        sub_agents=sub_agents or []
+    )
+    return agent
+
+
+# Session service singleton
+_session_service = None
+
+def get_session_service() -> InMemorySessionService:
+    """Get or create the session service singleton."""
+    global _session_service
+    if _session_service is None:
+        _session_service = InMemorySessionService()
+    return _session_service
+
+
+def create_runner(agent: Agent, app_name: str = "pragnapath") -> Runner:
+    """
+    Create a Runner for executing agent interactions.
+    
+    Args:
+        agent: The root agent to run
+        app_name: Application name for session management
+    
+    Returns:
+        Configured Runner instance
+    """
+    return Runner(
+        agent=agent,
+        app_name=app_name,
+        session_service=get_session_service()
+    )
+
+
+async def run_agent_async(
+    runner: Runner,
+    user_id: str,
+    session_id: str,
+    message: str
+) -> str:
+    """
+    Run an agent with a message and return the response.
+    
+    Args:
+        runner: The ADK Runner
+        user_id: User identifier
+        session_id: Session identifier
+        message: User message to process
+    
+    Returns:
+        Agent response text
+    """
+    # Create or get session
+    session = await runner.session_service.get_session(
+        app_name=runner.app_name,
+        user_id=user_id,
+        session_id=session_id
+    )
+    
+    if not session:
+        session = await runner.session_service.create_session(
+            app_name=runner.app_name,
+            user_id=user_id,
+            session_id=session_id
+        )
+    
+    # Create user message content
+    content = types.Content(
+        role="user",
+        parts=[types.Part(text=message)]
+    )
+    
+    # Run the agent and collect response
+    response_text = ""
+    async for event in runner.run_async(
+        user_id=user_id,
+        session_id=session_id,
+        new_message=content
+    ):
+        if hasattr(event, 'content') and event.content:
+            for part in event.content.parts:
+                if hasattr(part, 'text') and part.text:
+                    response_text += part.text
+    
+    return response_text
+
+
+# ============================================
+# LEGACY COMPATIBILITY LAYER
+# ============================================
+# This provides backward compatibility with existing agent code
+# while we transition to full ADK usage
+
+from abc import ABC, abstractmethod
 
 
 class BaseAgent(ABC):
     """
-    Base class for all PragnaPath agents.
-    Implements common functionality and ADK-style patterns.
+    Legacy base class for PragnaPath agents.
+    Wraps Google ADK functionality for backward compatibility.
+    
+    Note: New agents should use create_llm_agent() directly.
     """
     
     def __init__(
@@ -43,36 +197,21 @@ class BaseAgent(ABC):
     ):
         self.name = name
         self.description = description
-        self.use_groq = USE_GROQ
-        self.use_openrouter = USE_OPENROUTER
+        self.model = model or GEMINI_MODEL
         
-        if self.use_openrouter:
-            # OpenRouter for flexible model access
-            self.model = model or os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-r1-0528:free")
-            api_key = os.getenv("OPENROUTER_API_KEY")
-            if not api_key:
-                raise ValueError("OPENROUTER_API_KEY required. Get at https://openrouter.ai/keys")
-            self.client = OpenAI(
-                base_url="https://openrouter.ai/api/v1",
-                api_key=api_key
-            )
-        elif self.use_groq:
-            # Groq for development (fast & free)
-            self.model = model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-            api_key = os.getenv("GROQ_API_KEY")
-            if not api_key:
-                raise ValueError("GROQ_API_KEY required. Get free at https://console.groq.com/keys")
-            self.client = Groq(api_key=api_key)
-        else:
-            # Gemini for demo
-            self.model = model or os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-            api_key = os.getenv("GOOGLE_API_KEY")
-            if not api_key:
-                raise ValueError("GOOGLE_API_KEY environment variable is required")
-            self.client = genai.Client(api_key=api_key)
-        
-        # Agent-specific system instruction
+        # Build system instruction
         self._system_instruction = self._build_system_instruction()
+        
+        # Create underlying ADK agent
+        self._adk_agent = create_llm_agent(
+            name=name,
+            instruction=self._system_instruction,
+            description=description,
+            model=self.model
+        )
+        
+        # Create runner for this agent
+        self._runner = create_runner(self._adk_agent)
     
     @abstractmethod
     def _build_system_instruction(self) -> str:
@@ -100,35 +239,90 @@ class BaseAgent(ABC):
         max_tokens: int = 2048
     ) -> str:
         """
-        Generate a response using LLM (Groq, Gemini, or OpenRouter).
+        Generate a response using the active provider (OpenRouter, Groq, or Google).
         """
+        system_msg = system_instruction or self._system_instruction
+        
         try:
-            if self.use_openrouter or self.use_groq:
-                # OpenRouter and Groq both use OpenAI-compatible API
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": system_instruction or self._system_instruction},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=temperature,
-                    max_tokens=max_tokens
-                )
-                return response.choices[0].message.content
+            if ACTIVE_PROVIDER == "openrouter":
+                return await self._generate_openrouter(prompt, system_msg, temperature, max_tokens)
+            elif ACTIVE_PROVIDER == "groq":
+                return await self._generate_groq(prompt, system_msg, temperature, max_tokens)
             else:
-                # Gemini API
-                response = self.client.models.generate_content(
-                    model=self.model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_instruction or self._system_instruction,
-                        temperature=temperature,
-                        max_output_tokens=max_tokens
-                    )
-                )
-                return response.text
+                return await self._generate_google(prompt, system_msg, temperature, max_tokens)
         except Exception as e:
             return f"Error generating response: {str(e)}"
+    
+    async def _generate_openrouter(self, prompt: str, system_msg: str, temperature: float, max_tokens: int) -> str:
+        """Generate using OpenRouter API."""
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://pragnapath.app",
+                    "X-Title": "PragnaPath"
+                },
+                json={
+                    "model": OPENROUTER_MODEL,
+                    "messages": [
+                        {"role": "system", "content": system_msg},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": temperature,
+                    "max_tokens": max_tokens
+                }
+            )
+            data = response.json()
+            if "choices" in data and len(data["choices"]) > 0:
+                return data["choices"][0]["message"]["content"]
+            elif "error" in data:
+                return f"OpenRouter Error: {data['error'].get('message', str(data['error']))}"
+            return "No response from OpenRouter"
+    
+    async def _generate_groq(self, prompt: str, system_msg: str, temperature: float, max_tokens: int) -> str:
+        """Generate using Groq API."""
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": GROQ_MODEL,
+                    "messages": [
+                        {"role": "system", "content": system_msg},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": temperature,
+                    "max_tokens": max_tokens
+                }
+            )
+            data = response.json()
+            if "choices" in data and len(data["choices"]) > 0:
+                return data["choices"][0]["message"]["content"]
+            elif "error" in data:
+                return f"Groq Error: {data['error'].get('message', str(data['error']))}"
+            return "No response from Groq"
+    
+    async def _generate_google(self, prompt: str, system_msg: str, temperature: float, max_tokens: int) -> str:
+        """Generate using Google Gemini API."""
+        from google import genai
+        
+        client = genai.Client(api_key=GOOGLE_API_KEY)
+        
+        response = client.models.generate_content(
+            model=self.model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_msg,
+                temperature=temperature,
+                max_output_tokens=max_tokens
+            )
+        )
+        return response.text
     
     async def generate_json(
         self,
@@ -137,7 +331,7 @@ class BaseAgent(ABC):
         temperature: float = 0.3
     ) -> str:
         """
-        Generate a JSON response using LLM (Groq, Gemini, or OpenRouter).
+        Generate a JSON response using the active provider.
         """
         json_instruction = (system_instruction or self._system_instruction) + """
 
@@ -145,59 +339,52 @@ IMPORTANT: Respond ONLY with valid JSON. No markdown, no code blocks, no explana
 Start directly with { and end with }."""
         
         try:
-            if self.use_openrouter:
-                # OpenRouter API (OpenAI-compatible, but not all models support response_format)
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": json_instruction},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=temperature,
-                    max_tokens=2048
-                )
-                result = response.choices[0].message.content
-                # Clean up response - remove markdown code blocks if present
-                if result.startswith("```"):
-                    lines = result.split("\n")
-                    result = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-                return result.strip()
-            elif self.use_groq:
-                # Groq API
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": json_instruction},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=temperature,
-                    max_tokens=2048,
-                    response_format={"type": "json_object"}
-                )
-                return response.choices[0].message.content
-            else:
-                # Gemini API
-                response = self.client.models.generate_content(
-                    model=self.model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction=json_instruction,
-                        temperature=temperature,
-                        max_output_tokens=2048,
-                        response_mime_type="application/json"
-                    )
-                )
-                return response.text
+            response = await self.generate(prompt, json_instruction, temperature, 2048)
+            # Clean up response - remove markdown code blocks if present
+            response = response.strip()
+            if response.startswith("```json"):
+                response = response[7:]
+            if response.startswith("```"):
+                response = response[3:]
+            if response.endswith("```"):
+                response = response[:-3]
+            return response.strip()
         except Exception as e:
             return f'{{"error": "{str(e)}"}}'
+    
+    async def run_with_adk(self, user_id: str, session_id: str, message: str) -> str:
+        """
+        Run this agent using the full ADK pipeline.
+        
+        Args:
+            user_id: User identifier
+            session_id: Session identifier  
+            message: User message to process
+            
+        Returns:
+            Agent response text
+        """
+        return await run_agent_async(
+            runner=self._runner,
+            user_id=user_id,
+            session_id=session_id,
+            message=message
+        )
+    
+    def get_adk_agent(self) -> LlmAgent:
+        """Get the underlying ADK agent."""
+        return self._adk_agent
     
     def get_agent_info(self) -> Dict[str, str]:
         """Get agent metadata."""
         return {
             "name": self.name,
             "description": self.description,
-            "model": self.model
+            "model": ACTIVE_MODEL,
+            "provider": ACTIVE_PROVIDER,
+            "framework": "Google ADK"
         }
     
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__}(name='{self.name}')>"
+        return f"<{self.__class__.__name__}(name='{self.name}', provider='{ACTIVE_PROVIDER}')>"
+

@@ -2,7 +2,56 @@
 
 ## System Overview
 
-PragnaPath is a **multi-agent cognitive-adaptive learning system** built using Google ADK (Agent Development Kit) and Gemini models. The system observes how learners think and dynamically adapts teaching strategies.
+PragnaPath is a **multi-agent cognitive-adaptive learning system** built using **[Google ADK (Agent Development Kit)](https://google.github.io/adk-docs/)** and Gemini models. The system observes how learners think and dynamically adapts teaching strategies.
+
+## Google ADK Integration
+
+PragnaPath leverages Google ADK's powerful agent framework for multi-agent orchestration:
+
+### ADK Components Used
+
+| Component | Usage |
+|-----------|-------|
+| `LlmAgent` | Base class for all 5 specialized agents |
+| `sub_agents` | Sutradhar orchestrates child agents |
+| `Runner` | Executes agent pipelines with session context |
+| `InMemorySessionService` | Manages conversation state across agent calls |
+
+### Installation
+
+```bash
+pip install google-adk
+```
+
+### Agent Initialization Pattern
+
+```python
+from google.adk.agents import LlmAgent
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+
+# Create specialized agent
+agent = LlmAgent(
+    name="GurukulGuide",
+    model="gemini-2.0-flash",
+    instruction="You are an adaptive tutor...",
+    description="Adaptive tutoring agent"
+)
+
+# Orchestrator with sub-agents
+sutradhar = LlmAgent(
+    name="Sutradhar",
+    model="gemini-2.0-flash",
+    instruction="Coordinate teaching agents...",
+    sub_agents=[pragnabodh, gurukulguide, vidyaforge, sarvshiksha]
+)
+
+# Execute with session
+session_service = InMemorySessionService()
+runner = Runner(agent=sutradhar, app_name="pragnapath", session_service=session_service)
+```
+
+## Architecture Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -13,25 +62,26 @@ PragnaPath is a **multi-agent cognitive-adaptive learning system** built using G
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                         FASTAPI BACKEND                                  │
-│                     (Session Management + API)                          │
+│                (Session Management + ADK Runner API)                    │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    🎛️ SUTRADHAR (ORCHESTRATOR)                          │
-│              Central Controller - Routes & Coordinates                   │
+│              🎛️ SUTRADHAR (ADK LlmAgent - ORCHESTRATOR)                 │
+│              Central Controller with sub_agents Pattern                  │
 │                                                                          │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐│
 │  │ 🧠 PRAGNABODH│  │🧑‍🏫 GURUKUL   │  │ 🛠️ VIDYAFORGE│  │♿ SARVSHIKSHA ││
-│  │   Cognitive  │  │   GUIDE     │  │   Content    │  │ Accessibility││
-│  │   Engine     │  │   Tutor     │  │   Generator  │  │    Layer     ││
+│  │  LlmAgent   │  │   GUIDE     │  │   LlmAgent   │  │   LlmAgent   ││
+│  │  Cognitive  │  │  LlmAgent   │  │   Content    │  │ Accessibility││
 │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘│
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
+                         (via ADK Runner)
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                    GOOGLE GEMINI API                                     │
-│              (gemini-2.0-flash / gemini-1.5-pro)                        │
+│                     (gemini-2.0-flash)                                  │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -240,12 +290,19 @@ class SessionState:
 
 | Layer | Technology |
 |-------|------------|
-| AI Models | Google Gemini Pro / Flash |
-| Agent Framework | Google ADK |
+| **AI Framework** | **Google ADK (Agent Development Kit)** |
+| AI Models | Google Gemini 2.0 Flash |
 | Backend | Python 3.10+ / FastAPI |
 | Frontend | React 18 / Vite / Tailwind |
-| State | In-memory (production: Redis) |
+| Session State | ADK InMemorySessionService |
 | API Protocol | REST + JSON |
+
+### ADK Features Utilized
+
+- **LlmAgent**: Each of the 5 agents is an `LlmAgent` instance with specialized instructions
+- **sub_agents**: Sutradhar uses `sub_agents` parameter to coordinate child agents
+- **Runner**: Centralized execution with session tracking
+- **InMemorySessionService**: Maintains conversation context across multiple agent interactions
 
 ---
 

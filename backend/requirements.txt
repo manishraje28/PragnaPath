@@ -1,7 +1,6 @@
 # PragnaPath Backend Dependencies
-# Google ADK and Gemini
-google-genai>=1.11.0
-google-adk>=0.3.0
+# Google ADK (Agent Development Kit) - Core Framework
+google-adk>=1.0.0
 
 # Web Framework
 fastapi==0.115.6

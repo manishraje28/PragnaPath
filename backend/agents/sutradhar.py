@@ -1,15 +1,15 @@
 """
-🎛️ SUTRADHAR AGENT - The Orchestrator
-=====================================
+🎛️ SUTRADHAR AGENT - The Orchestrator (Google ADK Multi-Agent)
+===============================================================
 Meaning: "Narrator" or "One who holds the strings" (from Sanskrit theatre)
 
 Purpose:
-- Acts as the central coordinator for all agents
-- Routes requests to appropriate agents
+- Acts as the central coordinator for all agents using Google ADK
+- Routes requests to appropriate sub-agents
 - Maintains session flow and context
-- Makes decisions about which agent to invoke
+- Uses ADK's multi-agent orchestration
 
-Pattern: Sequential Router with Decision Logic
+Pattern: Google ADK Multi-Agent with Sub-Agents
 """
 
 import json
@@ -18,21 +18,27 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from typing import Any, Dict, Optional, List
-from agents.base import BaseAgent
+from agents.base import BaseAgent, create_llm_agent, GEMINI_MODEL
 from core.models import SessionState, LearnerProfile, OrchestratorDecision
+
+# Import ADK for multi-agent support
+from google.adk.agents import LlmAgent
 
 
 class SutradharAgent(BaseAgent):
     """
-    The Orchestrator Agent - Central controller of PragnaPath.
+    The Orchestrator Agent - Central controller of PragnaPath using Google ADK.
     Like a Sutradhar in Indian classical theatre, this agent narrates 
     and controls the flow of the learning experience.
+    
+    Uses Google ADK's multi-agent architecture with sub_agents for coordination.
     """
     
-    def __init__(self):
+    def __init__(self, sub_agents: List[LlmAgent] = None):
+        # Initialize base agent first
         super().__init__(
             name="Sutradhar",
-            description="The Orchestrator - coordinates all agents and manages learning flow"
+            description="The Orchestrator - coordinates all agents and manages learning flow using Google ADK"
         )
         
         # Available agents for routing
@@ -42,9 +48,36 @@ class SutradharAgent(BaseAgent):
             "vidyaforge",   # Content generation
             "sarvshiksha"   # Accessibility
         ]
+        
+        # Store sub-agents for ADK multi-agent orchestration
+        self.sub_agents = sub_agents or []
+        
+        # If sub-agents provided, recreate ADK agent with them
+        if sub_agents:
+            self._adk_agent = create_llm_agent(
+                name="Sutradhar",
+                instruction=self._system_instruction,
+                description=self.description,
+                model=GEMINI_MODEL,
+                sub_agents=sub_agents
+            )
+    
+    def set_sub_agents(self, sub_agents: List[LlmAgent]):
+        """
+        Set sub-agents for ADK multi-agent orchestration.
+        This allows dynamic agent configuration.
+        """
+        self.sub_agents = sub_agents
+        self._adk_agent = create_llm_agent(
+            name="Sutradhar",
+            instruction=self._system_instruction,
+            description=self.description,
+            model=GEMINI_MODEL,
+            sub_agents=sub_agents
+        )
     
     def _build_system_instruction(self) -> str:
-        return """You are Sutradhar, the master orchestrator of PragnaPath - an adaptive learning system.
+        return """You are Sutradhar, the master orchestrator of PragnaPath - an adaptive learning system built with Google ADK.
 
 Your name comes from Indian classical theatre where the Sutradhar is the narrator who guides the audience through the performance.
 
@@ -53,6 +86,7 @@ YOUR ROLE:
 - Decide which agent should handle each request
 - Maintain context continuity between agents
 - Ensure smooth learning experience flow
+- Use Google ADK's agent transfer capabilities for delegation
 
 AVAILABLE AGENTS:
 1. PragnaBodh - Runs cognitive diagnostics, builds learner profiles
@@ -61,17 +95,18 @@ AVAILABLE AGENTS:
 4. SarvShiksha - Makes content accessible (dyslexia-friendly, screen-reader)
 
 DECISION CRITERIA:
-- New user or topic → Start with PragnaBodh diagnostic
-- User needs explanation → Route to GurukulGuide
-- User needs practice → Route to VidyaForge
-- Accessibility needed → Route to SarvShiksha
+- New user or topic → Transfer to PragnaBodh for diagnostic
+- User needs explanation → Transfer to GurukulGuide
+- User needs practice → Transfer to VidyaForge
+- Accessibility needed → Transfer to SarvShiksha
 - User struggling → Update profile via PragnaBodh, then re-explain via GurukulGuide
 
+When delegating, use ADK's transfer mechanism to hand off to the appropriate sub-agent.
 Always explain your routing decisions briefly for transparency."""
     
     async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Main orchestration logic.
+        Main orchestration logic using Google ADK.
         Analyzes context and decides next action.
         """
         session: SessionState = context.get("session")
@@ -88,7 +123,8 @@ Always explain your routing decisions briefly for transparency."""
         return {
             "decision": decision,
             "session": session,
-            "sutradhar_message": self._generate_transition_message(decision)
+            "sutradhar_message": self._generate_transition_message(decision),
+            "adk_agent": self._adk_agent.name
         }
     
     async def _make_routing_decision(
@@ -96,7 +132,8 @@ Always explain your routing decisions briefly for transparency."""
         session: SessionState,
         user_input: str
     ) -> OrchestratorDecision:
-        """Use Gemini to make intelligent routing decision."""
+        """Use Google ADK + Gemini to make intelligent routing decision."""
+
         
         prompt = f"""Analyze this learning session and decide the next action.
 

@@ -1,7 +1,8 @@
 """
-PragnaPath - FastAPI Backend Server
-===================================
+PragnaPath - FastAPI Backend Server (Built with Google ADK)
+============================================================
 Main API server that exposes agent functionality to the frontend.
+Uses Google ADK (Agent Development Kit) for multi-agent orchestration.
 """
 
 import os
@@ -19,13 +20,15 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Import agents and core modules
+# Import agents and core modules - now using Google ADK
 from agents import (
     SutradharAgent,
     PragnaBodhAgent,
     GurukulGuideAgent,
     VidyaForgeAgent,
-    SarvShikshaAgent
+    SarvShikshaAgent,
+    create_runner,
+    GEMINI_MODEL
 )
 from core.session import session_manager, SessionManager
 from core.models import (
@@ -46,19 +49,31 @@ from core.models import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifecycle management."""
+    """Application lifecycle management with Google ADK."""
     # Startup
-    print("🚀 Starting PragnaPath Server...")
-    print("🧠 Initializing agents...")
+    print("🚀 Starting PragnaPath Server with Google ADK...")
+    print(f"🤖 Using model: {GEMINI_MODEL}")
+    print("🧠 Initializing Google ADK agents...")
     
-    # Initialize agents
-    app.state.sutradhar = SutradharAgent()
+    # Initialize all agents (they now use Google ADK internally)
     app.state.pragnabodh = PragnaBodhAgent()
     app.state.gurukulguide = GurukulGuideAgent()
     app.state.vidyaforge = VidyaForgeAgent()
     app.state.sarvshiksha = SarvShikshaAgent()
     
-    print("✅ All agents initialized!")
+    # Initialize Sutradhar (orchestrator) with sub-agents for ADK multi-agent
+    app.state.sutradhar = SutradharAgent()
+    app.state.sutradhar.set_sub_agents([
+        app.state.pragnabodh.get_adk_agent(),
+        app.state.gurukulguide.get_adk_agent(),
+        app.state.vidyaforge.get_adk_agent(),
+        app.state.sarvshiksha.get_adk_agent()
+    ])
+    
+    # Create ADK runner for the orchestrator
+    app.state.adk_runner = create_runner(app.state.sutradhar.get_adk_agent())
+    
+    print("✅ All Google ADK agents initialized!")
     print(f"📍 Server ready at http://localhost:{os.getenv('PORT', 8000)}")
     
     yield
@@ -73,10 +88,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="PragnaPath API",
-    description="Cognitive-Adaptive Multi-Agent Learning Companion",
+    description="Cognitive-Adaptive Multi-Agent Learning Companion - Built with Google ADK",
     version="1.0.0",
     lifespan=lifespan
 )
+
 
 # CORS for frontend
 app.add_middleware(
@@ -147,12 +163,14 @@ async def root():
         "name": "PragnaPath API",
         "version": "1.0.0",
         "tagline": "The AI that learns how YOU learn",
+        "framework": "Google ADK (Agent Development Kit)",
+        "model": GEMINI_MODEL,
         "agents": [
-            {"name": "Sutradhar", "role": "Orchestrator"},
-            {"name": "PragnaBodh", "role": "Cognitive Engine"},
-            {"name": "GurukulGuide", "role": "Adaptive Tutor"},
-            {"name": "VidyaForge", "role": "Content Generator"},
-            {"name": "SarvShiksha", "role": "Accessibility"}
+            {"name": "Sutradhar", "role": "Orchestrator", "type": "LlmAgent"},
+            {"name": "PragnaBodh", "role": "Cognitive Engine", "type": "LlmAgent"},
+            {"name": "GurukulGuide", "role": "Adaptive Tutor", "type": "LlmAgent"},
+            {"name": "VidyaForge", "role": "Content Generator", "type": "LlmAgent"},
+            {"name": "SarvShiksha", "role": "Accessibility", "type": "LlmAgent"}
         ]
     }
 
@@ -160,7 +178,34 @@ async def root():
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "framework": "Google ADK",
+        "model": GEMINI_MODEL
+    }
+
+
+@app.get("/api/adk-info")
+async def adk_info():
+    """Get Google ADK configuration info."""
+    return {
+        "framework": "Google ADK (Agent Development Kit)",
+        "framework_url": "https://google.github.io/adk-docs/",
+        "model": GEMINI_MODEL,
+        "agents": {
+            "sutradhar": app.state.sutradhar.get_agent_info(),
+            "pragnabodh": app.state.pragnabodh.get_agent_info(),
+            "gurukulguide": app.state.gurukulguide.get_agent_info(),
+            "vidyaforge": app.state.vidyaforge.get_agent_info(),
+            "sarvshiksha": app.state.sarvshiksha.get_agent_info()
+        },
+        "multi_agent": {
+            "orchestrator": "Sutradhar",
+            "sub_agents": ["PragnaBodh", "GurukulGuide", "VidyaForge", "SarvShiksha"]
+        }
+    }
+
 
 
 # ============================================
