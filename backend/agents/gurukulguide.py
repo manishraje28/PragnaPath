@@ -214,12 +214,23 @@ Use the EXAM-SMART approach:
 - Be concise and focused on what gets marks""",
             
             TeachingStyle.VISUAL_MENTAL: """
-Use the VISUAL/MENTAL MODEL approach:
-- Describe how to visualize this concept
-- Use text-based diagrams or structured layouts
-- Reference how things would look on paper
-- Help them build a mental picture
-- Use spatial language (left, right, above, below)"""
+Use the VISUAL/MENTAL MODEL approach - this learner is a VISUAL learner:
+- MUST include ASCII art diagrams or text-based visual representations
+- Use boxes, arrows, and structured layouts to show relationships
+- Create mental pictures using spatial descriptions (left, right, above, below)
+- Use TABLES or GRIDS to compare concepts side by side
+- Draw flowcharts using text characters like [Box] --> [Box]
+- Show processes as visual flows: Input → Process → Output
+- Use indentation and formatting to create visual hierarchy
+- Include a simple diagram that they could draw on paper
+- Reference colors and shapes when describing mental models
+- Example format for a simple diagram:
+  ```
+  ┌─────────┐     ┌─────────┐
+  │  Input  │ --> │ Process │ --> Output
+  └─────────┘     └─────────┘
+  ```
+- Make the explanation look different from pure text"""
         }
         
         re_explain_context = ""

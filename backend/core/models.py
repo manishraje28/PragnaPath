@@ -80,6 +80,16 @@ class LearnerProfile(BaseModel):
         description="List of detected misconceptions with severity"
     )
     
+    # Style preference vote tracking (for accurate style detection)
+    style_votes: Dict[str, int] = Field(
+        default_factory=lambda: {"conceptual": 0, "visual": 0, "exam-focused": 0},
+        description="Vote counts for each learning style from diagnostic answers"
+    )
+    depth_votes: Dict[str, int] = Field(
+        default_factory=lambda: {"intuition-first": 0, "formula-first": 0},
+        description="Vote counts for depth preference from diagnostic answers"
+    )
+    
     # Additional tracking
     topics_explored: List[str] = Field(default_factory=list)
     correct_answers: int = Field(default=0)
@@ -90,6 +100,27 @@ class LearnerProfile(BaseModel):
         if self.total_answers == 0:
             return 0.0
         return self.correct_answers / self.total_answers
+    
+    def finalize_style_from_votes(self) -> None:
+        """Determine final learning style and depth preference from accumulated votes."""
+        # Finalize learning style
+        if self.style_votes:
+            max_style = max(self.style_votes, key=self.style_votes.get)
+            if self.style_votes[max_style] > 0:
+                self.learning_style = LearningStyle(max_style)
+        
+        # Finalize depth preference
+        if self.depth_votes:
+            max_depth = max(self.depth_votes, key=self.depth_votes.get)
+            if self.depth_votes[max_depth] > 0:
+                self.depth_preference = DepthPreference(max_depth)
+    
+    def add_style_vote(self, style: str, depth: str = None) -> None:
+        """Add a vote for a learning style and optionally depth preference."""
+        if style in self.style_votes:
+            self.style_votes[style] += 1
+        if depth and depth in self.depth_votes:
+            self.depth_votes[depth] += 1
     
     def to_context_string(self) -> str:
         """Generate a context string for agent prompts."""
@@ -106,9 +137,18 @@ class LearnerProfile(BaseModel):
             ConfidenceLevel.HIGH: "Use direct tone. Can move faster. Add challenge questions."
         }
         
+        # Detailed style instructions for content generation
+        style_instructions = {
+            LearningStyle.CONCEPTUAL: "prefers stories, analogies, and real-world examples. Connect new concepts to familiar situations.",
+            LearningStyle.VISUAL: "VISUAL LEARNER - MUST include ASCII diagrams, flowcharts, tables, and visual representations. Use boxes, arrows, and spatial layouts. Create text-based diagrams they can visualize.",
+            LearningStyle.EXAM_FOCUSED: "prefers formal definitions, key terms, exam patterns, and mnemonics. Focus on what examiners look for."
+        }
+        
+        style_detail = style_instructions.get(self.learning_style, "")
+        
         return f"""
 LEARNER PROFILE:
-- Learning Style: {self.learning_style.value} ({"prefers stories and analogies" if self.learning_style == LearningStyle.CONCEPTUAL else "prefers visual diagrams" if self.learning_style == LearningStyle.VISUAL else "prefers exam patterns and definitions"})
+- Learning Style: {self.learning_style.value} ({style_detail})
 - Learning Intent: {self.learning_intent.value} ({intent_desc.get(self.learning_intent, '')})
 - Pace: {self.pace.value}
 - Confidence: {self.confidence.value}
@@ -117,6 +157,7 @@ LEARNER PROFILE:
 - Accuracy: {self.accuracy_rate():.0%}
 - Topics Explored: {', '.join(self.topics_explored) if self.topics_explored else 'None yet'}
 - Known Misconceptions: {len(self.detected_misconceptions)} detected
+- Style Votes: {self.style_votes}
 """
 
 

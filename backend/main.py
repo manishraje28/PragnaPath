@@ -291,6 +291,10 @@ async def complete_diagnostic(request: dict):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
+    # IMPORTANT: Finalize learning style from accumulated votes
+    session.learner_profile.finalize_style_from_votes()
+    session_manager.update_profile(session_id, session.learner_profile)
+    
     # Transition to learning phase
     session_manager.set_phase(session_id, "learning")
     
@@ -302,6 +306,7 @@ async def complete_diagnostic(request: dict):
 {session.learner_profile.to_context_string()}
 
 Be encouraging and explain how their learning experience will be personalized.
+Specifically mention their detected learning style: {session.learner_profile.learning_style.value}
 Keep it warm and concise.""",
         temperature=0.8
     )

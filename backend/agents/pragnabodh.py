@@ -747,8 +747,26 @@ Do NOT use bullet points or lists. Just natural conversational text.""",
             (total_time + answer.time_taken_seconds) / current_profile.total_answers
         )
         
-        # Detect learning style from meta questions
-        if question.concept_tested in ["Learning Style Detection", "Depth Preference Detection", "Confidence Style"]:
+        # Detect learning style from meta questions (expanded detection)
+        # Check for any meta-questions that indicate learning preferences
+        meta_concepts = [
+            "Learning Style Detection", 
+            "Depth Preference Detection", 
+            "Confidence Style",
+            "Learning Preference",
+            "Understanding Style"
+        ]
+        is_meta_question = (
+            question.concept_tested in meta_concepts or
+            question.topic == "Meta" or
+            "prefer" in question.question.lower() or
+            "I feel most confident" in question.question or
+            "I understand concepts best" in question.question or
+            "When learning" in question.question or
+            "When I encounter" in question.question
+        )
+        
+        if is_meta_question:
             current_profile = self._update_style_from_answer(current_profile, answer.selected_answer, question)
         
         # Update pace based on response time
@@ -780,27 +798,64 @@ Do NOT use bullet points or lists. Just natural conversational text.""",
         selected: int,
         question: DiagnosticQuestion
     ) -> LearnerProfile:
-        """Update learning style based on meta-question answers."""
+        """Update learning style based on meta-question answers using vote aggregation."""
         
-        # Learning style detection (answer index maps to style)
-        style_mapping = {
-            0: LearningStyle.CONCEPTUAL,  # Stories, analogies
-            1: LearningStyle.VISUAL,       # Diagrams, visual
-            2: LearningStyle.EXAM_FOCUSED, # Definitions, formulas
-            3: LearningStyle.EXAM_FOCUSED  # Practice problems
-        }
+        # Analyze the question options to determine which style each option represents
+        # We need to look at the actual option text to properly classify
+        options = question.options if hasattr(question, 'options') else []
         
-        depth_mapping = {
-            0: DepthPreference.INTUITION_FIRST,  # Why first
-            1: DepthPreference.INTUITION_FIRST,  # Visual understanding
-            2: DepthPreference.FORMULA_FIRST,    # Formal definitions
-            3: DepthPreference.FORMULA_FIRST     # Direct practice
-        }
+        # Keywords that indicate each style
+        visual_keywords = ['diagram', 'visual', 'flowchart', 'chart', 'picture', 'draw', 'see', 'look', 'image', 'graph']
+        conceptual_keywords = ['story', 'example', 'analogy', 'real-world', 'everyday', 'relate', 'why', 'understand', 'situation']
+        exam_keywords = ['definition', 'formula', 'exam', 'practice', 'memorize', 'term', 'key point', 'formal']
         
-        if selected in style_mapping:
-            profile.learning_style = style_mapping[selected]
-        if selected in depth_mapping:
-            profile.depth_preference = depth_mapping[selected]
+        style = None
+        depth = None
+        
+        if selected < len(options):
+            selected_option = options[selected].lower()
+            
+            # Count keyword matches for each style
+            visual_score = sum(1 for kw in visual_keywords if kw in selected_option)
+            conceptual_score = sum(1 for kw in conceptual_keywords if kw in selected_option)
+            exam_score = sum(1 for kw in exam_keywords if kw in selected_option)
+            
+            # Determine style based on highest score
+            max_score = max(visual_score, conceptual_score, exam_score)
+            
+            if max_score > 0:
+                if visual_score == max_score:
+                    style = "visual"
+                    depth = "intuition-first"
+                elif conceptual_score == max_score:
+                    style = "conceptual"
+                    depth = "intuition-first"
+                else:
+                    style = "exam-focused"
+                    depth = "formula-first"
+            else:
+                # Fallback to index-based mapping if no keywords match
+                style_mapping = {
+                    0: "conceptual",   # Usually first option is story/analogy based
+                    1: "visual",       # Often second option mentions diagrams
+                    2: "exam-focused", # Third often mentions formal definitions
+                    3: "exam-focused"  # Fourth often mentions practice/exams
+                }
+                depth_mapping = {
+                    0: "intuition-first",
+                    1: "intuition-first", 
+                    2: "formula-first",
+                    3: "formula-first"
+                }
+                style = style_mapping.get(selected, "conceptual")
+                depth = depth_mapping.get(selected, "intuition-first")
+        
+        # Add votes and update style
+        if style:
+            profile.add_style_vote(style, depth)
+            profile.learning_style = LearningStyle(style)
+            if depth:
+                profile.depth_preference = DepthPreference(depth)
         
         return profile
     
@@ -925,12 +980,16 @@ Respond with JSON:
             })
             profile = result["updated_profile"]
         
-        # Generate insights
+        # IMPORTANT: Finalize learning style from accumulated votes
+        profile.finalize_style_from_votes()
+        
+        # Generate insights with the finalized profile
         insights = await self.generate(
             f"""Based on this learner profile, generate 2-3 sentences of insight:
 {profile.to_context_string()}
 
 Be encouraging and explain how PragnaPath will adapt to their style.
+Specifically mention their detected learning style: {profile.learning_style.value}
 Keep it personal and warm.""",
             temperature=0.8
         )

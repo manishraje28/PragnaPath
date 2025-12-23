@@ -149,8 +149,9 @@ export default function ExplainBack({
                   value={explanation}
                   onChange={(e) => setExplanation(e.target.value)}
                   placeholder="Explain this concept in 2-3 sentences as if you were teaching a friend..."
-                  className="w-full h-24 p-3 rounded-lg border border-peacock-300 focus:border-peacock-500 focus:ring-2 focus:ring-peacock-200 resize-none text-gray-700"
+                  className="w-full h-24 p-3 rounded-lg border border-peacock-300 focus:border-peacock-500 focus:ring-2 focus:ring-peacock-200 resize-none bg-white text-gray-900 placeholder-gray-500"
                   disabled={isSubmitting}
+                  style={{ backgroundColor: 'white', color: '#111827' }}
                 />
                 
                 <div className="flex items-center justify-between mt-3">
