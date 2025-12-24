@@ -247,12 +247,40 @@ class Explanation(BaseModel):
 # ACCESSIBILITY MODELS (SarvShiksha Output)
 # ============================================
 
+class KeyTerm(BaseModel):
+    """A highlighted key term with definition."""
+    term: str
+    definition: str
+    importance: Literal["essential", "helpful", "advanced"] = "helpful"
+
+
+class SignLanguagePhrase(BaseModel):
+    """Structured phrase for sign language interpretation."""
+    phrase: str
+    gesture_hint: Optional[str] = None  # Hint for interpreter
+    sequence_order: int = 0
+    is_key_concept: bool = False
+
+
+class ReadingMode(BaseModel):
+    """Content formatted for a specific reading mode."""
+    mode: Literal["simple", "step_by_step", "key_ideas"]
+    content: str
+    bullet_points: Optional[List[str]] = None
+
+
 class AccessibleContent(BaseModel):
     """Accessibility-transformed content from SarvShiksha."""
     original_content: str
     dyslexia_friendly: str
     screen_reader_friendly: str
     simplified_version: str
+    
+    # NEW: Enhanced accessibility features
+    one_line_summary: Optional[str] = None
+    key_terms: Optional[List[KeyTerm]] = None
+    reading_modes: Optional[Dict[str, ReadingMode]] = None
+    sign_language_phrases: Optional[List[SignLanguagePhrase]] = None
 
 
 # ============================================

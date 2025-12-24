@@ -4,21 +4,43 @@ Manages learner sessions and state persistence.
 """
 
 import uuid
+import asyncio
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, Optional, Callable, Awaitable
 from .models import SessionState, LearnerProfile
+
+
+# Type for the async persistence callback
+ProfilePersistCallback = Callable[[str, LearnerProfile], Awaitable[bool]]
 
 
 class SessionManager:
     """
-    In-memory session manager.
+    In-memory session manager with real-time persistence support.
     For production, replace with Redis or database.
     """
     
     def __init__(self):
         self._sessions: Dict[str, SessionState] = {}
+        self._session_user_map: Dict[str, str] = {}  # session_id -> user_id mapping
+        self._persist_callback: Optional[ProfilePersistCallback] = None
     
-    def create_session(self, topic: Optional[str] = None) -> SessionState:
+    def set_persist_callback(self, callback: ProfilePersistCallback) -> None:
+        """
+        Set a callback to be invoked whenever a profile is updated.
+        This enables real-time persistence to MongoDB.
+        """
+        self._persist_callback = callback
+    
+    def _trigger_persist(self, session_id: str, profile: LearnerProfile) -> None:
+        """Trigger async persistence in the background without blocking."""
+        if self._persist_callback:
+            user_id = self.get_user_id(session_id)
+            if user_id:
+                # Schedule the coroutine to run without awaiting
+                asyncio.create_task(self._persist_callback(user_id, profile))
+    
+    def create_session(self, topic: Optional[str] = None, user_id: Optional[str] = None) -> SessionState:
         """Create a new learning session."""
         session_id = str(uuid.uuid4())[:8]  # Short ID for demo
         
@@ -30,7 +52,20 @@ class SessionManager:
         )
         
         self._sessions[session_id] = session
+        
+        # Track user_id mapping if provided
+        if user_id:
+            self._session_user_map[session_id] = user_id
+        
         return session
+    
+    def get_user_id(self, session_id: str) -> Optional[str]:
+        """Get the user_id associated with a session."""
+        return self._session_user_map.get(session_id)
+    
+    def set_user_id(self, session_id: str, user_id: str) -> None:
+        """Associate a user_id with a session."""
+        self._session_user_map[session_id] = user_id
     
     def get_session(self, session_id: str) -> Optional[SessionState]:
         """Retrieve a session by ID."""
@@ -44,7 +79,7 @@ class SessionManager:
         return session
     
     def update_profile(self, session_id: str, profile: LearnerProfile) -> Optional[SessionState]:
-        """Update the learner profile for a session."""
+        """Update the learner profile for a session and persist to MongoDB."""
         session = self.get_session(session_id)
         if session:
             old_style = session.learner_profile.learning_style
@@ -53,6 +88,9 @@ class SessionManager:
             # Track if adaptation occurred
             if old_style != profile.learning_style:
                 session.record_adaptation()
+            
+            # Trigger real-time persistence (non-blocking)
+            self._trigger_persist(session_id, profile)
             
             return self.update_session(session)
         return None

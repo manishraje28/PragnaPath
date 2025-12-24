@@ -87,6 +87,7 @@ export default function WelcomeScreen({ onStart, onDemo }) {
             <span>Start Learning</span>
           </motion.button>
 
+          {/* Judge Demo Mode button - COMMENTED OUT FOR NOW
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
@@ -96,6 +97,7 @@ export default function WelcomeScreen({ onStart, onDemo }) {
             <Presentation size={20} />
             <span>Judge Demo Mode</span>
           </motion.button>
+          */}
         </div>
       </motion.div>
 

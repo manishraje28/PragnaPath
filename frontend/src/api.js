@@ -14,6 +14,9 @@ const api = axios.create({
 // ============================================
 const SESSION_STORAGE_KEY = 'pragnapath_session_id';
 const PROFILE_STORAGE_KEY = 'pragnapath_profile';
+const USER_ID_STORAGE_KEY = 'pragnapath_user_id';
+const AUTH_TOKEN_KEY = 'pragnapath_auth_token';
+const USER_DATA_KEY = 'pragnapath_user_data';
 
 export const getStoredSessionId = () => {
   return localStorage.getItem(SESSION_STORAGE_KEY);
@@ -23,9 +26,58 @@ export const storeSessionId = (sessionId) => {
   localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
 };
 
+export const getStoredUserId = () => {
+  return localStorage.getItem(USER_ID_STORAGE_KEY);
+};
+
+export const storeUserId = (userId) => {
+  localStorage.setItem(USER_ID_STORAGE_KEY, userId);
+};
+
+// Auth token helpers
+export const getAuthToken = () => {
+  return localStorage.getItem(AUTH_TOKEN_KEY);
+};
+
+export const storeAuthToken = (token) => {
+  localStorage.setItem(AUTH_TOKEN_KEY, token);
+};
+
+export const getStoredUserData = () => {
+  const stored = localStorage.getItem(USER_DATA_KEY);
+  return stored ? JSON.parse(stored) : null;
+};
+
+export const storeUserData = (userData) => {
+  localStorage.setItem(USER_DATA_KEY, JSON.stringify(userData));
+  if (userData.user_id) {
+    storeUserId(userData.user_id);
+  }
+};
+
 export const clearStoredSession = () => {
   localStorage.removeItem(SESSION_STORAGE_KEY);
   localStorage.removeItem(PROFILE_STORAGE_KEY);
+  // Note: We intentionally keep user_id and auth for cross-session persistence
+};
+
+export const clearAllUserData = () => {
+  localStorage.removeItem(SESSION_STORAGE_KEY);
+  localStorage.removeItem(PROFILE_STORAGE_KEY);
+  localStorage.removeItem(USER_ID_STORAGE_KEY);
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(USER_DATA_KEY);
+};
+
+export const isLoggedIn = () => {
+  const token = getAuthToken();
+  const userData = getStoredUserData();
+  return !!(token && userData && !userData.is_guest);
+};
+
+export const isGuest = () => {
+  const userData = getStoredUserData();
+  return userData?.is_guest === true;
 };
 
 export const getStoredProfile = () => {
@@ -39,7 +91,10 @@ export const storeProfile = (profile) => {
 
 // Session APIs - with persistence
 export const startSession = async (topic = null, forceNew = false) => {
-  // Check for existing session
+  // Get stored user_id for returning user recognition
+  const storedUserId = getStoredUserId();
+  
+  // Check for existing session (same browser session)
   const existingSessionId = getStoredSessionId();
   
   if (existingSessionId && !forceNew) {
@@ -49,6 +104,7 @@ export const startSession = async (topic = null, forceNew = false) => {
       if (sessionData) {
         return {
           session_id: existingSessionId,
+          user_id: storedUserId,
           profile: sessionData.profile || getStoredProfile(),
           restored: true
         };
@@ -59,11 +115,20 @@ export const startSession = async (topic = null, forceNew = false) => {
     }
   }
   
-  // Create new session
-  const response = await api.post('/api/session/start', { topic });
+  // Create new session (send user_id if available for profile restoration)
+  const response = await api.post('/api/session/start', { 
+    topic,
+    user_id: storedUserId  // Send stored user_id for returning users
+  });
   
-  // Store session ID for persistence
+  // Store session ID and user_id for persistence
   storeSessionId(response.data.session_id);
+  
+  // Store user_id from server (may be new or confirmed existing)
+  if (response.data.user_id) {
+    storeUserId(response.data.user_id);
+  }
+  
   if (response.data.profile) {
     storeProfile(response.data.profile);
   }
@@ -79,6 +144,32 @@ export const getSession = async (sessionId) => {
 export const getProfile = async (sessionId) => {
   const response = await api.get(`/api/session/${sessionId}/profile`);
   return response.data;
+};
+
+// User persistence APIs
+export const getUserData = async (userId = null) => {
+  const id = userId || getStoredUserId();
+  if (!id) return null;
+  
+  try {
+    const response = await api.get(`/api/user/${id}`);
+    return response.data;
+  } catch (error) {
+    console.log('User data not found');
+    return null;
+  }
+};
+
+export const getUserTopicProgress = async (topic, userId = null) => {
+  const id = userId || getStoredUserId();
+  if (!id) return null;
+  
+  try {
+    const response = await api.get(`/api/user/${id}/progress/${encodeURIComponent(topic)}`);
+    return response.data;
+  } catch (error) {
+    return null;
+  }
 };
 
 // Diagnostic APIs
@@ -286,6 +377,117 @@ export const orchestrate = async (sessionId, userInput, action = 'auto') => {
     action,
   });
   return response.data;
+};
+
+// ============================================
+// AUTHENTICATION APIs
+// ============================================
+
+/**
+ * Create a guest account (frictionless start)
+ */
+export const createGuestAccount = async () => {
+  const response = await api.post('/api/auth/guest');
+  const data = response.data;
+  
+  // Store auth data
+  storeAuthToken(data.access_token);
+  storeUserData(data.user);
+  storeUserId(data.user.user_id);
+  
+  return data;
+};
+
+/**
+ * Register new user with email and password
+ */
+export const registerUser = async (email, password, name = null) => {
+  const response = await api.post('/api/auth/register', {
+    email,
+    password,
+    name
+  });
+  const data = response.data;
+  
+  // Store auth data
+  storeAuthToken(data.access_token);
+  storeUserData(data.user);
+  storeUserId(data.user.user_id);
+  
+  return data;
+};
+
+/**
+ * Login with email and password
+ */
+export const loginUser = async (email, password) => {
+  const response = await api.post('/api/auth/login', {
+    email,
+    password
+  });
+  const data = response.data;
+  
+  // Store auth data
+  storeAuthToken(data.access_token);
+  storeUserData(data.user);
+  storeUserId(data.user.user_id);
+  
+  return data;
+};
+
+/**
+ * Upgrade guest account to registered account
+ * Preserves all learning progress
+ */
+export const upgradeGuestAccount = async (email, password, name = null) => {
+  const userData = getStoredUserData();
+  if (!userData || !userData.is_guest) {
+    throw new Error('No guest account to upgrade');
+  }
+  
+  const response = await api.post('/api/auth/upgrade', {
+    guest_user_id: userData.user_id,
+    email,
+    password,
+    name
+  });
+  const data = response.data;
+  
+  // Update stored auth data
+  storeAuthToken(data.access_token);
+  storeUserData(data.user);
+  
+  return data;
+};
+
+/**
+ * Get current user from token
+ */
+export const getCurrentUser = async () => {
+  const token = getAuthToken();
+  if (!token) {
+    return null;
+  }
+  
+  try {
+    const response = await api.get('/api/auth/me', {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    return response.data;
+  } catch (error) {
+    // Token invalid/expired
+    clearAllUserData();
+    return null;
+  }
+};
+
+/**
+ * Logout - clear all stored data
+ */
+export const logout = () => {
+  clearAllUserData();
 };
 
 export default api;

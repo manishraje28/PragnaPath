@@ -15,11 +15,12 @@ Pattern: Content Transformation Pipeline
 import re
 import sys
 import os
+import json
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 from agents.base import BaseAgent
-from core.models import AccessibleContent
+from core.models import AccessibleContent, KeyTerm, SignLanguagePhrase, ReadingMode
 
 
 class SarvShikshaAgent(BaseAgent):
@@ -97,15 +98,26 @@ Always be inclusive. Never assume prior knowledge."""
     async def _transform_all(self, content: str) -> Dict[str, Any]:
         """Apply all accessibility transformations."""
         
+        # Core transformations (existing)
         dyslexia = await self._transform_dyslexia(content)
         screen_reader = await self._transform_screen_reader(content)
         simplified = await self._transform_simplified(content)
+        
+        # NEW: Enhanced accessibility features
+        one_line_summary = await self._generate_one_line_summary(content)
+        key_terms = await self._extract_key_terms(content)
+        reading_modes = await self._generate_reading_modes(content)
+        sign_phrases = await self._generate_sign_language_phrases(content)
         
         accessible = AccessibleContent(
             original_content=content,
             dyslexia_friendly=dyslexia,
             screen_reader_friendly=screen_reader,
-            simplified_version=simplified
+            simplified_version=simplified,
+            one_line_summary=one_line_summary,
+            key_terms=key_terms,
+            reading_modes=reading_modes,
+            sign_language_phrases=sign_phrases
         )
         
         return {
@@ -188,6 +200,171 @@ RULES:
 Create the simplest possible version while keeping all key information."""
 
         return await self.generate(prompt, temperature=0.4, max_tokens=1500)
+    
+    # ============================================
+    # NEW: Enhanced Accessibility Features
+    # ============================================
+    
+    async def _generate_one_line_summary(self, content: str) -> str:
+        """Generate a one-line summary of the content."""
+        
+        prompt = f"""Create a ONE LINE SUMMARY of this educational content.
+
+CONTENT:
+{content}
+
+RULES:
+1. Maximum 15 words
+2. Capture the main concept only
+3. Use simple, common words
+4. Make it memorable
+5. Start with the key subject
+
+Return ONLY the one-line summary, nothing else."""
+
+        return await self.generate(prompt, temperature=0.3, max_tokens=50)
+    
+    async def _extract_key_terms(self, content: str) -> List[KeyTerm]:
+        """Extract and define key terms from the content."""
+        
+        prompt = f"""Extract KEY TERMS from this educational content.
+
+CONTENT:
+{content}
+
+For each term, provide:
+1. The term itself
+2. A simple 1-sentence definition (use everyday words)
+3. Importance level: "essential" (must know), "helpful" (good to know), or "advanced" (for deeper understanding)
+
+Return JSON array:
+[
+    {{"term": "...", "definition": "...", "importance": "essential|helpful|advanced"}},
+    ...
+]
+
+Extract 3-6 key terms. Focus on concepts that might be new to learners."""
+
+        try:
+            response = await self.generate_json(prompt)
+            terms_data = json.loads(response) if isinstance(response, str) else response
+            return [KeyTerm(**term) for term in terms_data[:6]]
+        except Exception as e:
+            # Fallback: extract simple terms
+            return [KeyTerm(term="Key concept", definition="The main idea from this lesson", importance="essential")]
+    
+    async def _generate_reading_modes(self, content: str) -> Dict[str, ReadingMode]:
+        """Generate content in different reading modes."""
+        
+        # Simple mode
+        simple_prompt = f"""Rewrite this content in SIMPLE MODE for quick understanding.
+
+CONTENT:
+{content}
+
+RULES:
+1. Use the simplest words possible
+2. Maximum 10 words per sentence
+3. Remove all extra details
+4. Keep only the core message
+5. Use everyday examples
+
+Return just the simplified text."""
+
+        simple_content = await self.generate(simple_prompt, temperature=0.3, max_tokens=500)
+        
+        # Step-by-step mode
+        step_prompt = f"""Rewrite this content in STEP-BY-STEP MODE.
+
+CONTENT:
+{content}
+
+RULES:
+1. Break into numbered steps (Step 1, Step 2, etc.)
+2. Each step should be one clear action or idea
+3. Start each step with a verb when possible
+4. Keep steps short (max 2 sentences)
+5. Add "Why:" after complex steps to explain reasoning
+
+Return the step-by-step version."""
+
+        step_content = await self.generate(step_prompt, temperature=0.3, max_tokens=700)
+        
+        # Key ideas mode
+        key_ideas_prompt = f"""Extract KEY IDEAS from this content as bullet points.
+
+CONTENT:
+{content}
+
+RULES:
+1. 3-5 key ideas maximum
+2. Each idea in one sentence
+3. Start with the most important idea
+4. Use "→" to show cause-effect relationships
+5. Make each point standalone and memorable
+
+Return as bullet points (use • symbol)."""
+
+        key_ideas_content = await self.generate(key_ideas_prompt, temperature=0.3, max_tokens=400)
+        
+        # Extract bullet points from key ideas
+        bullet_points = [
+            line.strip().lstrip('•').strip() 
+            for line in key_ideas_content.split('\n') 
+            if line.strip().startswith('•') or line.strip().startswith('-')
+        ]
+        
+        return {
+            "simple": ReadingMode(mode="simple", content=simple_content),
+            "step_by_step": ReadingMode(mode="step_by_step", content=step_content),
+            "key_ideas": ReadingMode(mode="key_ideas", content=key_ideas_content, bullet_points=bullet_points)
+        }
+    
+    async def _generate_sign_language_phrases(self, content: str) -> List[SignLanguagePhrase]:
+        """Generate structured phrases optimized for sign language interpretation."""
+        
+        prompt = f"""Convert this content into SIGN-LANGUAGE-READY PHRASES.
+
+CONTENT:
+{content}
+
+RULES:
+1. Break into short, clear phrases (3-7 words each)
+2. Use Subject-Verb-Object order
+3. Remove filler words (a, the, is, are)
+4. Replace abstract words with concrete concepts
+5. Add gesture hints for complex concepts
+6. Mark key concepts that need emphasis
+7. Keep phrases in logical teaching order
+
+Return JSON array:
+[
+    {{
+        "phrase": "...", 
+        "gesture_hint": "optional hint for interpreter",
+        "sequence_order": 1,
+        "is_key_concept": true/false
+    }},
+    ...
+]
+
+Generate 8-15 phrases that capture the full meaning."""
+
+        try:
+            response = await self.generate_json(prompt)
+            phrases_data = json.loads(response) if isinstance(response, str) else response
+            return [SignLanguagePhrase(**phrase) for phrase in phrases_data]
+        except Exception as e:
+            # Fallback: simple phrase extraction
+            sentences = content.split('.')[:5]
+            return [
+                SignLanguagePhrase(
+                    phrase=s.strip()[:50] if s.strip() else "Content available",
+                    sequence_order=i,
+                    is_key_concept=(i == 0)
+                )
+                for i, s in enumerate(sentences) if s.strip()
+            ]
     
     async def analyze_accessibility(self, content: str) -> Dict[str, Any]:
         """Analyze content for accessibility issues."""

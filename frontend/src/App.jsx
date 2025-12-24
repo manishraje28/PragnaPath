@@ -191,10 +191,12 @@ function App() {
         return (
           <WelcomeScreen 
             onStart={() => handleStartSession()} 
+            /* Demo mode commented out for now
             onDemo={() => {
               setIsDemoMode(true);
               setCurrentPhase('demo');
             }}
+            */
           />
         );
       
@@ -246,6 +248,7 @@ function App() {
           />
         );
       
+      /* Demo mode case commented out for now
       case 'demo':
         return (
           <DemoMode
@@ -256,6 +259,7 @@ function App() {
             }}
           />
         );
+      */
       
       default:
         return <WelcomeScreen onStart={() => handleStartSession()} />;
@@ -326,12 +330,13 @@ function App() {
         </div>
       </header>
 
-      {/* Agent Trace Panel */}
+      {/* Agent Trace Panel - COMMENTED OUT FOR NOW
       <AgentTracePanel 
         traces={agentTraces} 
         isExpanded={showTracePanel}
         onToggle={() => setShowTracePanel(!showTracePanel)}
       />
+      */}
 
       {/* Profile Sidebar (when learning) */}
       <AnimatePresence>
@@ -368,8 +373,8 @@ function App() {
           <div className="flex justify-between items-center text-sm text-gray-500">
             <div className="flex items-center space-x-4">
               <span className="flex items-center space-x-1">
-                <Brain size={14} />
-                <span>Powered by Google Gemini + ADK</span>
+                {/* <Brain size={14} /> */}
+                {/* <span>Powered by Google Gemini + ADK</span> */}
               </span>
             </div>
             <div className="flex items-center space-x-2">

@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -41,6 +41,25 @@ from core.models import (
     DepthPreference,
     LearningIntent
 )
+from core.persistence import user_persistence
+from core.models import LearnerProfile as LearnerProfileModel
+from core.tts import tts_service, IndianVoice, TTSService
+
+
+# ============================================
+# REAL-TIME PERSISTENCE CALLBACK
+# ============================================
+
+async def persist_profile_realtime(user_id: str, profile: LearnerProfileModel) -> bool:
+    """
+    Callback for real-time profile persistence.
+    Called automatically whenever session_manager.update_profile() is invoked.
+    """
+    try:
+        return await user_persistence.save_learner_profile(user_id, profile.model_dump())
+    except Exception as e:
+        print(f"⚠️ Real-time persist failed for {user_id}: {e}")
+        return False
 
 
 # ============================================
@@ -53,6 +72,17 @@ async def lifespan(app: FastAPI):
     # Startup
     print("🚀 Starting PragnaPath Server with Google ADK...")
     print(f"🤖 Using model: {GEMINI_MODEL}")
+    
+    # Connect to MongoDB for user persistence (gracefully degrades if unavailable)
+    persistence_connected = await user_persistence.connect()
+    if persistence_connected:
+        print("💾 User persistence enabled (MongoDB Atlas)")
+        # Wire up real-time persistence callback
+        session_manager.set_persist_callback(persist_profile_realtime)
+        print("🔄 Real-time profile sync enabled")
+    else:
+        print("💾 User persistence disabled (in-memory only)")
+    
     print("🧠 Initializing Google ADK agents...")
     
     # Initialize all agents (they now use Google ADK internally)
@@ -80,6 +110,7 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     print("👋 Shutting down PragnaPath Server...")
+    await user_persistence.disconnect()
 
 
 # ============================================
@@ -111,6 +142,7 @@ app.add_middleware(
 class StartSessionRequest(BaseModel):
     topic: Optional[str] = None
     user_name: Optional[str] = None
+    user_id: Optional[str] = None  # For returning users (guest ID from localStorage)
 
 
 class AnswerSubmission(BaseModel):
@@ -144,12 +176,51 @@ class AccessibilityRequest(BaseModel):
     mode: str = "all"  # all, dyslexia, screen-reader, simplified
 
 
+class TTSRequest(BaseModel):
+    text: str
+    voice: Optional[str] = "en-IN-NeerjaNeural"  # Default: Indian female teacher
+    rate: Optional[str] = "+0%"  # Speech rate: -50% to +100%
+
+
 class UpdateProfileRequest(BaseModel):
     session_id: str
     learning_style: Optional[str] = None
     pace: Optional[str] = None
     confidence: Optional[str] = None
     depth_preference: Optional[str] = None
+
+
+# ============================================
+# PERSISTENCE HELPERS
+# ============================================
+
+async def persist_profile(session_id: str, profile: LearnerProfile) -> bool:
+    """
+    Persist learner profile to MongoDB if user_id is available.
+    Called after significant profile updates.
+    """
+    user_id = session_manager.get_user_id(session_id)
+    if user_id:
+        return await user_persistence.save_learner_profile(
+            user_id, 
+            profile.model_dump()
+        )
+    return False
+
+
+async def persist_topic_progress(session_id: str, topic: str, progress: dict) -> bool:
+    """
+    Persist topic progress to MongoDB if user_id is available.
+    Called after completing diagnostic or learning phases.
+    """
+    user_id = session_manager.get_user_id(session_id)
+    if user_id:
+        return await user_persistence.save_topic_progress(
+            user_id,
+            topic,
+            progress
+        )
+    return False
 
 
 # ============================================
@@ -182,7 +253,11 @@ async def health():
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "framework": "Google ADK",
-        "model": GEMINI_MODEL
+        "model": GEMINI_MODEL,
+        "persistence": {
+            "enabled": user_persistence.is_connected,
+            "type": "mongodb" if user_persistence.is_connected else "in-memory"
+        }
     }
 
 
@@ -207,21 +282,56 @@ async def adk_info():
     }
 
 
-
 # ============================================
 # SESSION ENDPOINTS
 # ============================================
 
 @app.post("/api/session/start")
 async def start_session(request: StartSessionRequest):
-    """Start a new learning session."""
-    session = session_manager.create_session(topic=request.topic)
+    """Start a new learning session, restoring profile for returning users."""
+    # Get or create user (handles guest ID generation)
+    user_data = await user_persistence.get_or_create_user(request.user_id)
+    user_id = user_data["user_id"]
+    
+    # Create session with user_id mapping
+    session = session_manager.create_session(topic=request.topic, user_id=user_id)
+    
+    # Check if returning user has a stored profile
+    stored_profile = await user_persistence.get_learner_profile(user_id)
+    is_returning = stored_profile is not None
+    
+    if stored_profile:
+        # Restore the learner profile from persistence
+        try:
+            restored_profile = LearnerProfile(**stored_profile)
+            session.learner_profile = restored_profile
+            session_manager.update_session(session)
+        except Exception as e:
+            # If profile restoration fails, start fresh
+            print(f"Warning: Could not restore profile for {user_id}: {e}")
+            is_returning = False
+    
+    # Get topic progress if returning
+    topic_progress = None
+    if is_returning and request.topic:
+        topic_progress = await user_persistence.get_topic_progress(user_id, request.topic)
+    
+    # Build appropriate welcome message
+    if is_returning:
+        message = f"🙏 Welcome back! Great to see you again. I remember your learning style - let's continue from where you left off with {request.topic or 'Computer Science'}."
+        next_step = "learning" if topic_progress else "diagnostic"
+    else:
+        message = f"🙏 Namaste! Welcome to PragnaPath. I'm here to help you learn {request.topic or 'Computer Science'} in a way that works best for YOU."
+        next_step = "diagnostic"
     
     return {
         "session_id": session.session_id,
-        "message": f"🙏 Namaste! Welcome to PragnaPath. I'm here to help you learn {request.topic or 'Computer Science'} in a way that works best for YOU.",
-        "next_step": "diagnostic",
-        "profile": session.learner_profile.model_dump()
+        "user_id": user_id,  # Return user_id for frontend to store
+        "message": message,
+        "next_step": next_step,
+        "profile": session.learner_profile.model_dump(),
+        "is_returning_user": is_returning,
+        "topic_progress": topic_progress
     }
 
 
@@ -245,6 +355,44 @@ async def get_profile(session_id: str):
     return {
         "profile": session.learner_profile.model_dump(),
         "context": session.learner_profile.to_context_string()
+    }
+
+
+@app.get("/api/user/{user_id}")
+async def get_user_data(user_id: str):
+    """Get user data including profile and all topic progress."""
+    user_summary = await user_persistence.get_user_summary(user_id)
+    
+    if not user_summary:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return user_summary
+
+
+@app.get("/api/user/{user_id}/progress/{topic}")
+async def get_user_topic_progress(user_id: str, topic: str):
+    """Get user's progress for a specific topic."""
+    progress = await user_persistence.get_topic_progress(user_id, topic)
+    
+    return {
+        "user_id": user_id,
+        "topic": topic,
+        "progress": progress
+    }
+
+
+@app.get("/api/user/{user_id}/profile/history")
+async def get_user_profile_history(user_id: str, limit: int = 10):
+    """
+    Get profile evolution history for a user.
+    Shows how the learner profile changed over time.
+    """
+    history = await user_persistence.get_profile_history(user_id, limit)
+    
+    return {
+        "user_id": user_id,
+        "history_count": len(history),
+        "history": history
     }
 
 
@@ -339,6 +487,19 @@ async def complete_diagnostic(request: dict):
     # IMPORTANT: Finalize learning style from accumulated votes
     session.learner_profile.finalize_style_from_votes()
     session_manager.update_profile(session_id, session.learner_profile)
+    
+    # Persist the finalized profile to MongoDB
+    await persist_profile(session_id, session.learner_profile)
+    
+    # Persist topic progress
+    if session.current_topic:
+        await persist_topic_progress(session_id, session.current_topic, {
+            "diagnostic_completed": True,
+            "accuracy": session.learner_profile.accuracy_rate(),
+            "correct_answers": session.learner_profile.correct_answers,
+            "total_answers": session.learner_profile.total_answers,
+            "last_phase": "diagnostic"
+        })
     
     # Transition to learning phase
     session_manager.set_phase(session_id, "learning")
@@ -580,6 +741,99 @@ async def analyze_accessibility(request: dict):
 
 
 # ============================================
+# TEXT-TO-SPEECH ENDPOINTS (Indian Voice)
+# ============================================
+
+@app.get("/api/tts/voices")
+async def get_tts_voices():
+    """Get available Indian English TTS voices."""
+    return {
+        "voices": TTSService.get_available_voices(),
+        "default": "en-IN-NeerjaNeural",
+        "description": "Indian English voices for educational content"
+    }
+
+
+@app.post("/api/tts/speak")
+async def text_to_speech(request: TTSRequest):
+    """
+    Convert text to speech with Indian English voice.
+    Returns MP3 audio stream for accessibility.
+    
+    Available voices:
+    - en-IN-NeerjaNeural (female, recommended for teaching)
+    - en-IN-NeerjaExpressiveNeural (female, more expressive)
+    - en-IN-PrabhatNeural (male teacher voice)
+    """
+    try:
+        # Validate voice
+        voice = IndianVoice.NEERJA  # Default
+        if request.voice:
+            try:
+                voice = IndianVoice(request.voice)
+            except ValueError:
+                # Use default if invalid
+                pass
+        
+        # Generate audio
+        audio_bytes = await tts_service.synthesize(
+            text=request.text,
+            voice=voice,
+            rate=request.rate or "+0%"
+        )
+        
+        # Return as streaming audio
+        return StreamingResponse(
+            iter([audio_bytes]),
+            media_type="audio/mpeg",
+            headers={
+                "Content-Disposition": "inline",
+                "Cache-Control": "public, max-age=3600"
+            }
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"TTS generation failed: {str(e)}"
+        )
+
+
+@app.post("/api/tts/stream")
+async def stream_tts(request: TTSRequest):
+    """
+    Stream TTS audio in chunks for real-time playback.
+    Better for long content.
+    """
+    try:
+        voice = IndianVoice.NEERJA
+        if request.voice:
+            try:
+                voice = IndianVoice(request.voice)
+            except ValueError:
+                pass
+        
+        async def audio_generator():
+            async for chunk in tts_service.synthesize_streaming(
+                text=request.text,
+                voice=voice,
+                rate=request.rate or "+0%"
+            ):
+                yield chunk
+        
+        return StreamingResponse(
+            audio_generator(),
+            media_type="audio/mpeg"
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"TTS streaming failed: {str(e)}"
+        )
+
+
+# ============================================
 # PROFILE MANAGEMENT
 # ============================================
 
@@ -604,6 +858,9 @@ async def update_profile_manual(request: UpdateProfileRequest):
     session_manager.update_profile(request.session_id, profile)
     session.record_adaptation()
     session_manager.update_session(session)
+    
+    # Persist updated profile to MongoDB
+    await persist_profile(request.session_id, profile)
     
     return {
         "message": "Profile updated!",

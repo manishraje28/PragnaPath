@@ -10,9 +10,19 @@ python-multipart==0.0.18
 # Utilities
 pydantic==2.10.3
 python-dotenv==1.0.1
+pydantic[email]  # For email validation
 
 # Session & State
 redis==5.2.1  # Optional: for production sessions
+
+# User Persistence (MongoDB)
+motor==3.6.0  # Async MongoDB driver
+
+# Authentication
+PyJWT>=2.8.0  # JWT token handling
+
+# Text-to-Speech (Accessibility)
+edge-tts>=7.0.0  # Microsoft Edge TTS with Indian voices
 
 # Dev Tools
 httpx==0.28.1

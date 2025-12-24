@@ -16,7 +16,12 @@ import {
   Loader2,
   Image,
   MessageSquare,
-  Hand
+  Hand,
+  Volume2,
+  List,
+  Target,
+  Sparkles,
+  Tag
 } from 'lucide-react';
 import { getExplanation, getReExplanation, generateContent, transformAccessibility, getVisualization, getSignLanguageScripts, submitMCQAnswer, checkMisconceptions } from '../api';
 import ProfileCard from './ProfileCard';
@@ -27,6 +32,7 @@ import VisualizationRenderer from './VisualizationRenderer';
 import ErrorBoundary from './ErrorBoundary';
 import AdvancedFeatures from './AdvancedFeatures';
 import MisconceptionAlert from './MisconceptionAlert';
+import TextToSpeech from './TextToSpeech';
 
 export default function LearningView({ 
   sessionId, 
@@ -385,6 +391,19 @@ export default function LearningView({
         layout
         className="card mb-6"
       >
+        {/* TTS Listen Button - Accessibility */}
+        <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-100">
+          <div className="flex items-center gap-2 text-gray-600">
+            <Volume2 size={18} />
+            <span className="text-sm font-medium">Listen to explanation (Indian voice)</span>
+          </div>
+          <TextToSpeech 
+            text={explanation?.content || ''} 
+            onStart={() => addTrace?.('sarvshiksha', 'Text-to-Speech started', 'Indian voice', 'in-progress')}
+            onEnd={() => addTrace?.('sarvshiksha', 'Text-to-Speech completed', null, 'completed')}
+          />
+        </div>
+
         {/* Explanation Content */}
         <div className="explanation-content prose prose-gray max-w-none">
           <ReactMarkdown>{explanation?.content}</ReactMarkdown>
@@ -680,11 +699,79 @@ export default function LearningView({
               </h3>
 
               <div className="space-y-4">
+                {/* NEW: One-Line Summary */}
+                {accessibleContent.one_line_summary && (
+                  <motion.div 
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white p-4 rounded-xl shadow-lg"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <Sparkles size={18} />
+                      <span className="font-semibold text-sm">📝 In One Line</span>
+                    </div>
+                    <p className="text-lg font-medium">{accessibleContent.one_line_summary}</p>
+                  </motion.div>
+                )}
+
+                {/* NEW: Key Terms with Highlighting */}
+                {accessibleContent.key_terms && accessibleContent.key_terms.length > 0 && (
+                  <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-xl">
+                    <h4 className="font-semibold text-yellow-800 mb-3 flex items-center gap-2">
+                      <Tag size={18} />
+                      <span>🔑 Key Terms to Know</span>
+                    </h4>
+                    <div className="grid gap-3">
+                      {accessibleContent.key_terms.map((term, index) => (
+                        <motion.div
+                          key={index}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.1 }}
+                          className={`p-3 rounded-lg border-l-4 ${
+                            term.importance === 'essential' 
+                              ? 'bg-red-50 border-red-500' 
+                              : term.importance === 'advanced'
+                              ? 'bg-purple-50 border-purple-500'
+                              : 'bg-yellow-100 border-yellow-500'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-bold text-gray-900">{term.term}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              term.importance === 'essential' 
+                                ? 'bg-red-200 text-red-700' 
+                                : term.importance === 'advanced'
+                                ? 'bg-purple-200 text-purple-700'
+                                : 'bg-yellow-200 text-yellow-700'
+                            }`}>
+                              {term.importance === 'essential' ? '⭐ Must Know' : 
+                               term.importance === 'advanced' ? '🚀 Advanced' : '💡 Helpful'}
+                            </span>
+                          </div>
+                          <p className="text-gray-700 text-sm">{term.definition}</p>
+                        </motion.div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* NEW: Reading Modes Selector */}
+                {accessibleContent.reading_modes && (
+                  <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-4 rounded-xl border border-indigo-200">
+                    <h4 className="font-semibold text-indigo-800 mb-3 flex items-center gap-2">
+                      <List size={18} />
+                      <span>📖 Choose Your Reading Mode</span>
+                    </h4>
+                    <ReadingModeSelector modes={accessibleContent.reading_modes} />
+                  </div>
+                )}
+
                 {/* Dyslexia-friendly */}
                 {accessibleContent.dyslexia_friendly && (
                   <div className="bg-amber-50 p-4 rounded-lg">
-                    <h4 className="font-medium text-amber-800 mb-2">Dyslexia-Friendly</h4>
-                    <p className="text-amber-700 whitespace-pre-line leading-loose" style={{ fontFamily: 'OpenDyslexic, sans-serif' }}>
+                    <h4 className="font-medium text-amber-800 mb-2">📚 Dyslexia-Friendly</h4>
+                    <p className="text-amber-700 whitespace-pre-line leading-loose text-lg" style={{ fontFamily: 'OpenDyslexic, sans-serif', letterSpacing: '0.05em' }}>
                       {accessibleContent.dyslexia_friendly}
                     </p>
                   </div>
@@ -693,7 +780,7 @@ export default function LearningView({
                 {/* Simplified */}
                 {accessibleContent.simplified_version && (
                   <div className="bg-green-50 p-4 rounded-lg">
-                    <h4 className="font-medium text-green-800 mb-2">Simplified Version</h4>
+                    <h4 className="font-medium text-green-800 mb-2">🌱 Simplified Version</h4>
                     <p className="text-green-700 whitespace-pre-line">
                       {accessibleContent.simplified_version}
                     </p>
@@ -701,7 +788,7 @@ export default function LearningView({
                 )}
 
                 {/* Fallback if no structured content */}
-                {!accessibleContent.dyslexia_friendly && !accessibleContent.simplified_version && (
+                {!accessibleContent.dyslexia_friendly && !accessibleContent.simplified_version && !accessibleContent.one_line_summary && (
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <h4 className="font-medium text-gray-800 mb-2">Accessible Version</h4>
                     <p className="text-gray-700 whitespace-pre-line">
@@ -710,8 +797,55 @@ export default function LearningView({
                   </div>
                 )}
 
-                {/* Sign Language Scripts */}
-                {signLanguageScripts && signLanguageScripts.sign_language_phrases && Array.isArray(signLanguageScripts.sign_language_phrases) && (
+                {/* NEW: Enhanced Sign Language Phrases */}
+                {accessibleContent.sign_language_phrases && accessibleContent.sign_language_phrases.length > 0 && (
+                  <div className="bg-purple-50 p-4 rounded-xl border border-purple-200">
+                    <h4 className="font-semibold text-purple-800 mb-2 flex items-center gap-2">
+                      <Hand size={18} />
+                      <span>🤟 Sign-Language Ready Phrases</span>
+                      <span className="text-xs bg-purple-200 text-purple-700 px-2 py-0.5 rounded-full">
+                        {accessibleContent.sign_language_phrases.length} phrases
+                      </span>
+                    </h4>
+                    <p className="text-xs text-purple-600 mb-3">
+                      Structured phrases with gesture hints for sign language interpreters
+                    </p>
+                    <div className="space-y-2">
+                      {accessibleContent.sign_language_phrases.map((item, index) => (
+                        <motion.div
+                          key={index}
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: index * 0.05 }}
+                          className={`flex items-start gap-3 p-2 rounded-lg ${
+                            item.is_key_concept ? 'bg-purple-100 border-l-4 border-purple-500' : 'bg-white'
+                          }`}
+                        >
+                          <span className="text-purple-400 font-mono text-sm min-w-[24px]">
+                            {item.sequence_order || index + 1}.
+                          </span>
+                          <div className="flex-1">
+                            <p className={`text-purple-800 ${item.is_key_concept ? 'font-semibold' : ''}`}>
+                              {item.phrase}
+                              {item.is_key_concept && <span className="ml-2">⭐</span>}
+                            </p>
+                            {item.gesture_hint && (
+                              <p className="text-xs text-purple-500 mt-1 italic">
+                                💡 Gesture: {item.gesture_hint}
+                              </p>
+                            )}
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                    <p className="text-xs text-purple-500 mt-3 italic flex items-center gap-1">
+                      ✓ Optimized for sign language avatar systems • ISL/ASL ready
+                    </p>
+                  </div>
+                )}
+
+                {/* Legacy Sign Language Scripts (backward compatibility) */}
+                {signLanguageScripts && signLanguageScripts.sign_language_phrases && Array.isArray(signLanguageScripts.sign_language_phrases) && !accessibleContent.sign_language_phrases && (
                   <div className="bg-purple-50 p-4 rounded-lg">
                     <h4 className="font-medium text-purple-800 mb-2 flex items-center space-x-2">
                       <Hand size={18} />
@@ -745,6 +879,69 @@ export default function LearningView({
             </div>
           </motion.div>
         )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// NEW: Reading Mode Selector Component
+function ReadingModeSelector({ modes }) {
+  const [activeMode, setActiveMode] = useState('simple');
+  
+  const modeConfig = {
+    simple: { icon: Target, label: 'Simple', color: 'green', emoji: '🎯' },
+    step_by_step: { icon: List, label: 'Step-by-Step', color: 'blue', emoji: '📋' },
+    key_ideas: { icon: Lightbulb, label: 'Key Ideas', color: 'amber', emoji: '💡' }
+  };
+
+  return (
+    <div>
+      {/* Mode Tabs */}
+      <div className="flex gap-2 mb-4">
+        {Object.entries(modes).map(([key, mode]) => {
+          const config = modeConfig[key] || modeConfig.simple;
+          const Icon = config.icon;
+          return (
+            <button
+              key={key}
+              onClick={() => setActiveMode(key)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all ${
+                activeMode === key
+                  ? `bg-${config.color}-500 text-white shadow-lg`
+                  : `bg-white text-gray-600 hover:bg-gray-100 border border-gray-200`
+              }`}
+            >
+              <span>{config.emoji}</span>
+              <span>{config.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Active Mode Content */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={activeMode}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          className="bg-white p-4 rounded-lg border border-indigo-100"
+        >
+          {modes[activeMode]?.bullet_points && modes[activeMode].bullet_points.length > 0 ? (
+            <ul className="space-y-2">
+              {modes[activeMode].bullet_points.map((point, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="text-indigo-500 mt-1">•</span>
+                  <span className="text-gray-700">{point}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-gray-700 whitespace-pre-line leading-relaxed">
+              {modes[activeMode]?.content || 'Content not available'}
+            </p>
+          )}
+        </motion.div>
       </AnimatePresence>
     </div>
   );
