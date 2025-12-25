@@ -46,29 +46,40 @@ Your name combines 'Vidya' (sacred knowledge in Sanskrit) with 'Forge' (to craft
 
 YOUR ROLE:
 - Transform CS concepts into practice-ready learning materials
-- Generate MCQs at appropriate difficulty levels
+- Generate MCQs at appropriate difficulty levels (ALWAYS generate the requested number)
 - Create memorable flashcards
 - Produce concise, effective summaries
 
 CONTENT GENERATION PRINCIPLES:
 1. DIFFICULTY CALIBRATION: Match the learner's level
-   - Low confidence → Start with easier questions
-   - High confidence → Include challenging edge cases
+   - Low confidence → Start with easier questions (more easy, fewer hard)
+   - High confidence → Include challenging edge cases (more hard questions)
    
 2. QUESTION QUALITY:
+   - Generate EXACTLY the number of questions requested
    - Avoid trivial True/False conversions
    - Test understanding, not just recall
    - Include practical application questions
+   - Make wrong options plausible but clearly incorrect
    
 3. FLASHCARD EFFECTIVENESS:
    - One concept per card
-   - Front: Question or prompt
+   - Front: Clear question or prompt
    - Back: Concise answer with example
+   - Cover different aspects of the topic
    
 4. SUMMARY CLARITY:
-   - Key points only
-   - Use bullet points
+   - Start with one-line definition
+   - Key points only using dashes (-)
    - Include one memorable example
+   - Be concise but complete
+
+CRITICAL FORMATTING RULES:
+- NEVER use markdown formatting like **bold** or *italic* or __underline__
+- Use PLAIN TEXT only - no asterisks or underscores for emphasis
+- Use CAPITAL LETTERS if you need to emphasize something
+- Use dashes (-) or numbers (1. 2. 3.) for lists
+- Keep all content clean and readable
 
 Always maintain educational quality while being accessible."""
     
@@ -138,7 +149,7 @@ Always maintain educational quality while being accessible."""
         else:
             difficulty_dist = "2 easy, 2 medium, 1 hard"
         
-        prompt = f"""Generate {count} multiple-choice questions on: {topic}
+        prompt = f"""Generate EXACTLY {count} multiple-choice questions on: {topic}
 
 LEARNER PROFILE:
 - Confidence: {profile.confidence.value}
@@ -148,22 +159,34 @@ LEARNER PROFILE:
 DIFFICULTY DISTRIBUTION: {difficulty_dist}
 
 REQUIREMENTS:
+- Generate EXACTLY {count} questions - no more, no less
 - Each question tests UNDERSTANDING, not just recall
-- 4 options per question
+- 4 options per question (labeled A, B, C, D in the options array)
 - Include practical/application questions
-- Make distractors (wrong options) plausible
-- Add brief explanations for correct answers
+- Make distractors (wrong options) plausible but clearly wrong
+- Add brief, helpful explanations for correct answers
+- Questions should cover different aspects of the topic
+- NO markdown formatting (no ** or * or __)
 
-Return as JSON array:
+Return as a JSON array with EXACTLY {count} questions:
 [
   {{
-    "question": "...",
-    "options": ["A", "B", "C", "D"],
+    "question": "Clear question text without any markdown",
+    "options": ["Option A text", "Option B text", "Option C text", "Option D text"],
     "correct_answer": 0,
-    "explanation": "...",
-    "difficulty": "easy|medium|hard"
+    "explanation": "Brief explanation of why this is correct (no markdown)",
+    "difficulty": "easy"
+  }},
+  {{
+    "question": "Second question...",
+    "options": ["A", "B", "C", "D"],
+    "correct_answer": 1,
+    "explanation": "Explanation...",
+    "difficulty": "medium"
   }}
-]"""
+]
+
+IMPORTANT: Return ONLY the JSON array, no other text. Generate ALL {count} questions."""
 
         try:
             response = await self.generate_json(prompt)
@@ -173,23 +196,64 @@ Return as JSON array:
             if isinstance(data, dict) and "questions" in data:
                 data = data["questions"]
             
+            # Ensure we have the right number of questions
+            if len(data) < count:
+                # Generate more if we got fewer than expected
+                additional = await self._generate_fallback_mcqs(topic, count - len(data))
+                data.extend(additional)
+            
             return [MCQQuestion(**q) for q in data[:count]]
         except Exception as e:
-            # Return fallback questions
-            return [
-                MCQQuestion(
-                    question=f"What is the primary purpose of {topic}?",
-                    options=[
-                        "To improve system efficiency",
-                        "To manage resources effectively",
-                        "To provide abstraction",
-                        "All of the above"
-                    ],
-                    correct_answer=3,
-                    explanation="This concept serves multiple important purposes.",
-                    difficulty="easy"
-                )
-            ]
+            # Return comprehensive fallback questions for the topic
+            return self._get_fallback_mcqs(topic, count)
+    
+    def _get_fallback_mcqs(self, topic: str, count: int) -> List[MCQQuestion]:
+        """Generate fallback MCQs when AI generation fails."""
+        topic_lower = topic.lower()
+        
+        # Pre-built fallback questions for common CS topics
+        fallback_bank = {
+            "deadlock": [
+                MCQQuestion(question="Which of the following is NOT a necessary condition for deadlock?", options=["Mutual Exclusion", "Hold and Wait", "Preemption", "Circular Wait"], correct_answer=2, explanation="Preemption prevents deadlock. The absence of preemption (No Preemption) is actually a required condition.", difficulty="medium"),
+                MCQQuestion(question="What is the Banker's Algorithm used for?", options=["Memory allocation", "Deadlock avoidance", "Process scheduling", "Disk scheduling"], correct_answer=1, explanation="Banker's Algorithm is a deadlock avoidance algorithm that tests for safety before granting resource requests.", difficulty="medium"),
+                MCQQuestion(question="In deadlock, what does 'Circular Wait' mean?", options=["Processes wait in a queue", "Each process waits for a resource held by the next process in a cycle", "CPU waits for I/O", "Resources wait for processes"], correct_answer=1, explanation="Circular Wait means P1 waits for P2, P2 waits for P3, and so on, with the last waiting for P1.", difficulty="easy"),
+                MCQQuestion(question="Which method handles deadlock by terminating processes?", options=["Prevention", "Avoidance", "Detection and Recovery", "Ignorance"], correct_answer=2, explanation="Detection and Recovery allows deadlock to occur but then detects and resolves it by terminating processes.", difficulty="medium"),
+                MCQQuestion(question="What is a safe state in deadlock avoidance?", options=["No processes are running", "All resources are free", "There exists at least one sequence in which all processes can complete", "CPU utilization is below 50%"], correct_answer=2, explanation="A safe state guarantees that there exists a sequence of process execution that can complete without deadlock.", difficulty="hard"),
+            ],
+            "process": [
+                MCQQuestion(question="What is a process in an operating system?", options=["A file on disk", "A program in execution", "A CPU register", "A memory address"], correct_answer=1, explanation="A process is a program that is currently being executed, including its code, data, and state.", difficulty="easy"),
+                MCQQuestion(question="Which process state indicates a process is waiting for I/O?", options=["Ready", "Running", "Blocked/Waiting", "Terminated"], correct_answer=2, explanation="A process enters the Blocked or Waiting state when it's waiting for an I/O operation or event to complete.", difficulty="easy"),
+                MCQQuestion(question="What is the purpose of the Process Control Block (PCB)?", options=["Store user files", "Store process metadata and state", "Execute programs", "Manage memory"], correct_answer=1, explanation="PCB stores all information about a process including its state, registers, memory limits, and scheduling info.", difficulty="medium"),
+                MCQQuestion(question="What triggers a context switch?", options=["Program compilation", "Interrupt or system call", "File creation", "Network connection"], correct_answer=1, explanation="Context switches occur due to interrupts, system calls, or when the scheduler decides to run another process.", difficulty="medium"),
+                MCQQuestion(question="What is the difference between a process and a thread?", options=["Threads share memory, processes don't", "Processes are faster", "Threads run on different CPUs only", "There is no difference"], correct_answer=0, explanation="Threads within the same process share memory space, while processes have separate memory spaces.", difficulty="medium"),
+            ],
+            "scheduling": [
+                MCQQuestion(question="Which scheduling algorithm can cause starvation?", options=["Round Robin", "First Come First Serve", "Shortest Job First", "All of the above"], correct_answer=2, explanation="Shortest Job First can cause starvation of longer processes if short processes keep arriving.", difficulty="medium"),
+                MCQQuestion(question="What is the time quantum in Round Robin scheduling?", options=["Total CPU time", "Maximum process size", "Fixed time slice for each process", "I/O wait time"], correct_answer=2, explanation="Time quantum is the fixed time slice that each process gets before being preempted in Round Robin.", difficulty="easy"),
+                MCQQuestion(question="Which metric measures how long a process waits in the ready queue?", options=["Turnaround time", "Waiting time", "Response time", "Burst time"], correct_answer=1, explanation="Waiting time is the total time a process spends waiting in the ready queue.", difficulty="easy"),
+                MCQQuestion(question="What is preemptive scheduling?", options=["Process runs until completion", "Process can be interrupted and moved to ready queue", "Only one process runs", "No context switching"], correct_answer=1, explanation="Preemptive scheduling allows the OS to interrupt a running process and switch to another.", difficulty="medium"),
+                MCQQuestion(question="Which scheduling minimizes average waiting time for a given set of processes?", options=["FCFS", "Round Robin", "Shortest Job First", "Priority Scheduling"], correct_answer=2, explanation="SJF (Shortest Job First) provably minimizes average waiting time for a known set of processes.", difficulty="hard"),
+            ],
+        }
+        
+        # Find matching questions
+        for key, questions in fallback_bank.items():
+            if key in topic_lower:
+                return questions[:count]
+        
+        # Generic fallback
+        return [
+            MCQQuestion(question=f"What is the main purpose of {topic}?", options=["Resource management", "Process coordination", "Memory optimization", "All of the above"], correct_answer=3, explanation=f"This concept in {topic} serves multiple important purposes in computing.", difficulty="easy"),
+            MCQQuestion(question=f"Which is a key characteristic of {topic}?", options=["Efficiency", "Scalability", "Reliability", "All are important characteristics"], correct_answer=3, explanation="All these characteristics are important for this concept.", difficulty="easy"),
+            MCQQuestion(question=f"When would you use {topic}?", options=["Never", "In specific scenarios where it's applicable", "Always", "Only in theory"], correct_answer=1, explanation="This concept is applied in specific scenarios where its benefits are needed.", difficulty="medium"),
+            MCQQuestion(question=f"What problem does {topic} solve?", options=["Performance issues", "Resource conflicts", "System coordination", "Depends on the context"], correct_answer=3, explanation="The specific problem solved depends on how and where this concept is applied.", difficulty="medium"),
+            MCQQuestion(question=f"What is a limitation of {topic}?", options=["No limitations", "Overhead in certain cases", "Not applicable to modern systems", "Too simple to be useful"], correct_answer=1, explanation="Most concepts have trade-offs, often involving some overhead.", difficulty="medium"),
+        ][:count]
+    
+    async def _generate_fallback_mcqs(self, topic: str, count: int) -> List[dict]:
+        """Generate additional MCQs as dicts for when AI returns fewer than requested."""
+        fallback = self._get_fallback_mcqs(topic, count)
+        return [{"question": q.question, "options": q.options, "correct_answer": q.correct_answer, "explanation": q.explanation, "difficulty": q.difficulty} for q in fallback]
     
     async def _generate_flashcards(
         self,
@@ -207,22 +271,25 @@ Return as JSON array:
         else:
             style_hint = "Include visual/structural descriptions where helpful."
         
-        prompt = f"""Generate {count} flashcards for: {topic}
+        prompt = f"""Generate EXACTLY {count} flashcards for: {topic}
 
 LEARNER STYLE: {profile.learning_style.value}
 STYLE HINT: {style_hint}
 
 REQUIREMENTS:
 - One key concept per card
-- Front: Clear question or prompt
-- Back: Concise answer with example
-- Make them memorable
+- Front: Clear question or prompt (no markdown)
+- Back: Concise answer with example (no markdown)
+- Make them memorable and useful for revision
+- Cover different aspects of the topic
 
-Return as JSON array:
+CRITICAL: NO markdown formatting. Use plain text only. No ** or * or __ symbols.
+
+Return as JSON array with EXACTLY {count} flashcards:
 [
   {{
-    "front": "Question or concept prompt",
-    "back": "Answer with brief example",
+    "front": "Question or concept prompt (plain text)",
+    "back": "Answer with brief example (plain text)",
     "topic": "{topic}"
   }}
 ]"""
@@ -234,15 +301,50 @@ Return as JSON array:
             if isinstance(data, dict) and "flashcards" in data:
                 data = data["flashcards"]
             
-            return [Flashcard(**f) for f in data[:count]]
+            # Strip any markdown that slipped through
+            from agents.base import strip_markdown
+            flashcards = []
+            for f in data[:count]:
+                flashcards.append(Flashcard(
+                    front=strip_markdown(f.get("front", "")),
+                    back=strip_markdown(f.get("back", "")),
+                    topic=f.get("topic", topic)
+                ))
+            return flashcards
         except Exception as e:
-            return [
-                Flashcard(
-                    front=f"What is {topic}?",
-                    back=f"A fundamental concept in computer science that helps manage...",
-                    topic=topic
-                )
-            ]
+            return self._get_fallback_flashcards(topic, count)
+    
+    def _get_fallback_flashcards(self, topic: str, count: int) -> List[Flashcard]:
+        """Get fallback flashcards when generation fails."""
+        topic_lower = topic.lower()
+        
+        flashcard_bank = {
+            "deadlock": [
+                Flashcard(front="What are the 4 conditions required for deadlock?", back="1) Mutual Exclusion 2) Hold and Wait 3) No Preemption 4) Circular Wait. Remember: All 4 must be present simultaneously.", topic=topic),
+                Flashcard(front="How does the Banker's Algorithm prevent deadlock?", back="It checks if granting a resource request will leave the system in a SAFE STATE (where all processes can eventually complete). If not, the request is denied.", topic=topic),
+                Flashcard(front="What is Circular Wait in deadlock?", back="When Process P1 waits for P2, P2 waits for P3, and P3 waits for P1 - forming a cycle. Like people in a circle each waiting for the next person to move.", topic=topic),
+            ],
+            "process": [
+                Flashcard(front="What is a Process Control Block (PCB)?", back="A data structure containing all info about a process: Process ID, state, registers, memory info, I/O status. Like an ID card for processes.", topic=topic),
+                Flashcard(front="What are the 5 process states?", back="NEW (created), READY (waiting for CPU), RUNNING (executing), WAITING (blocked for I/O), TERMINATED (finished)", topic=topic),
+                Flashcard(front="Process vs Thread - key difference?", back="Threads share the same memory space within a process. Processes have separate memory. Threads are lightweight; processes are heavyweight.", topic=topic),
+            ],
+            "scheduling": [
+                Flashcard(front="What is CPU Scheduling?", back="The method by which the OS decides which process in the ready queue gets the CPU next. Goal: maximize CPU utilization and fairness.", topic=topic),
+                Flashcard(front="Round Robin Scheduling - how it works?", back="Each process gets a fixed time slice (quantum). After quantum expires, process goes to back of queue. Fair but may have high context switch overhead.", topic=topic),
+                Flashcard(front="SJF vs FCFS - which is better for waiting time?", back="SJF (Shortest Job First) gives minimum average waiting time. FCFS is simple but can cause convoy effect where short jobs wait behind long ones.", topic=topic),
+            ],
+        }
+        
+        for key, cards in flashcard_bank.items():
+            if key in topic_lower:
+                return cards[:count]
+        
+        return [
+            Flashcard(front=f"What is {topic}?", back=f"A fundamental computing concept that manages resources and coordination in systems.", topic=topic),
+            Flashcard(front=f"Why is {topic} important?", back=f"It solves critical problems in computing by providing efficient and organized solutions.", topic=topic),
+            Flashcard(front=f"When to use {topic}?", back=f"Use it when you need to handle complex scenarios that require systematic management.", topic=topic),
+        ][:count]
     
     async def _generate_summary(
         self,
@@ -264,13 +366,16 @@ LENGTH: {length_guide.get(profile.pace.value, "moderate")}
 
 REQUIREMENTS:
 - Start with a one-line definition
-- Cover the core concept
+- Cover the core concept clearly
 - Include one practical example
-- List 3-5 key points
+- List 3-5 key points at the end
+
+CRITICAL: Use PLAIN TEXT only. NO markdown formatting like ** or * or __.
+Use dashes (-) for bullet points.
 
 Format:
 SUMMARY:
-[Your summary here]
+[Your summary here - plain text only]
 
 KEY POINTS:
 - Point 1
@@ -279,6 +384,7 @@ KEY POINTS:
 
         try:
             response = await self.generate(prompt, temperature=0.6)
+            from agents.base import strip_markdown
             
             # Parse summary and key points
             summary = response
@@ -286,16 +392,18 @@ KEY POINTS:
             
             if "KEY POINTS:" in response:
                 parts = response.split("KEY POINTS:")
-                summary = parts[0].replace("SUMMARY:", "").strip()
+                summary = strip_markdown(parts[0].replace("SUMMARY:", "").strip())
                 key_points = [
-                    line.strip().lstrip("- •").strip()
+                    strip_markdown(line.strip().lstrip("- •").strip())
                     for line in parts[1].split("\n")
                     if line.strip() and (line.strip().startswith("-") or line.strip().startswith("•"))
                 ]
+            else:
+                summary = strip_markdown(summary)
             
             return summary, key_points[:5]
         except Exception as e:
-            return f"Summary of {topic}: A fundamental concept...", [f"Key aspect of {topic}"]
+            return f"Summary of {topic}: A fundamental concept in computing that helps manage system resources efficiently.", [f"Key aspect of {topic}", "Important for system optimization", "Used in real-world applications"]
     
     async def generate_from_pdf_text(
         self,

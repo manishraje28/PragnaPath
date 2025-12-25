@@ -41,6 +41,13 @@ class SarvShikshaAgent(BaseAgent):
 Your name comes from India's 'Sarva Shiksha Abhiyan' - the campaign for universal education.
 Your mission is to ensure EVERY learner can access and understand content.
 
+CRITICAL FORMATTING RULES:
+- NEVER use markdown formatting like **bold** or *italic* or __underline__
+- Use PLAIN TEXT ONLY - no asterisks or underscores anywhere
+- Use CAPITAL LETTERS for emphasis instead of bold
+- Use dashes (-) or numbers (1. 2. 3.) for lists
+- Keep all output clean and readable
+
 ACCESSIBILITY PRINCIPLES:
 
 1. DYSLEXIA-FRIENDLY:
@@ -48,30 +55,29 @@ ACCESSIBILITY PRINCIPLES:
    - Short sentences (max 15 words)
    - One idea per sentence
    - Avoid complex punctuation
-   - Clear paragraph breaks
+   - Clear paragraph breaks with blank lines
    - No justified text alignment
    
 2. SCREEN-READER FRIENDLY:
-   - Clear heading hierarchy
-   - Descriptive link text
-   - Alt text for concepts
+   - Clear section markers using SECTION and END OF SECTION
+   - Descriptive text for all concepts
    - Logical reading order
-   - Numbered lists over bullets
-   - Explicit section markers
+   - Numbered lists for steps
+   - Spell out symbols and abbreviations
 
 3. COGNITIVE ACCESSIBILITY:
-   - Plain language
-   - Define technical terms immediately
-   - Use concrete examples
+   - Plain language only
+   - Define technical terms immediately after first use
+   - Use concrete, everyday examples
    - Avoid idioms and metaphors
-   - Consistent terminology
-   - Chunked information
+   - Consistent terminology throughout
+   - Break information into small chunks
 
 4. VISUAL SIMPLIFICATION:
    - No dense paragraphs
-   - Clear spacing
-   - Important info first
-   - Summarize, then detail
+   - Clear spacing between sections
+   - Important information first
+   - Summarize, then provide detail
 
 Always be inclusive. Never assume prior knowledge."""
     
@@ -97,14 +103,15 @@ Always be inclusive. Never assume prior knowledge."""
     
     async def _transform_all(self, content: str) -> Dict[str, Any]:
         """Apply all accessibility transformations."""
+        from agents.base import strip_markdown
         
         # Core transformations (existing)
-        dyslexia = await self._transform_dyslexia(content)
-        screen_reader = await self._transform_screen_reader(content)
-        simplified = await self._transform_simplified(content)
+        dyslexia = strip_markdown(await self._transform_dyslexia(content))
+        screen_reader = strip_markdown(await self._transform_screen_reader(content))
+        simplified = strip_markdown(await self._transform_simplified(content))
         
         # NEW: Enhanced accessibility features
-        one_line_summary = await self._generate_one_line_summary(content)
+        one_line_summary = strip_markdown(await self._generate_one_line_summary(content))
         key_terms = await self._extract_key_terms(content)
         reading_modes = await self._generate_reading_modes(content)
         sign_phrases = await self._generate_sign_language_phrases(content)
@@ -122,7 +129,7 @@ Always be inclusive. Never assume prior knowledge."""
         
         return {
             "accessible_content": accessible,
-            "message": "♿ Content transformed for accessibility!"
+            "message": "Content transformed for accessibility!"
         }
     
     async def _transform_dyslexia(self, content: str) -> str:
@@ -145,6 +152,10 @@ RULES:
 9. No italics or ALL CAPS references
 10. Add extra line breaks for visual clarity
 
+CRITICAL: DO NOT use any markdown formatting like **bold** or *italic* or __underline__.
+Use PLAIN TEXT ONLY. No asterisks or underscores.
+Use CAPITAL LETTERS if you need emphasis.
+
 Transform the content following these rules. 
 Keep all the important information but make it easier to read."""
 
@@ -159,16 +170,20 @@ ORIGINAL TEXT:
 {content}
 
 RULES:
-1. Add clear section markers: [SECTION: Name]
+1. Add clear section markers: SECTION - Name
 2. Use numbered lists instead of bullets
-3. Spell out symbols (e.g., "equals" instead of "=")
+3. Spell out symbols (for example, say "equals" instead of "=")
 4. Add verbal descriptions for any visual concepts
 5. Use a logical reading order
 6. Start with a brief summary
 7. Define acronyms on first use
 8. Use explicit transitions ("Next...", "Finally...")
 9. Avoid tables - use lists instead
-10. Add "[END OF SECTION]" markers
+10. Add "END OF SECTION" markers
+
+CRITICAL: DO NOT use any markdown formatting like **bold** or *italic* or __underline__.
+Use PLAIN TEXT ONLY. No asterisks or underscores.
+Use CAPITAL LETTERS for section headers and emphasis.
 
 Make the text optimized for being read aloud by a screen reader.
 Maintain all educational content."""
@@ -195,7 +210,11 @@ RULES:
    - Abstract concepts without examples
    - Idioms or metaphors
    - Complex punctuation
-8. Add "In other words..." clarifications for difficult parts
+8. Add "In simple words..." clarifications for difficult parts
+
+CRITICAL: DO NOT use any markdown formatting like **bold** or *italic* or __underline__.
+Use PLAIN TEXT ONLY. No asterisks or underscores anywhere.
+If you need emphasis, use CAPITAL LETTERS.
 
 Create the simplest possible version while keeping all key information."""
 
@@ -255,6 +274,7 @@ Extract 3-6 key terms. Focus on concepts that might be new to learners."""
     
     async def _generate_reading_modes(self, content: str) -> Dict[str, ReadingMode]:
         """Generate content in different reading modes."""
+        from agents.base import strip_markdown
         
         # Simple mode
         simple_prompt = f"""Rewrite this content in SIMPLE MODE for quick understanding.
@@ -269,9 +289,11 @@ RULES:
 4. Keep only the core message
 5. Use everyday examples
 
+CRITICAL: Use PLAIN TEXT ONLY. No markdown formatting like ** or * or __.
+
 Return just the simplified text."""
 
-        simple_content = await self.generate(simple_prompt, temperature=0.3, max_tokens=500)
+        simple_content = strip_markdown(await self.generate(simple_prompt, temperature=0.3, max_tokens=500))
         
         # Step-by-step mode
         step_prompt = f"""Rewrite this content in STEP-BY-STEP MODE.
@@ -286,9 +308,11 @@ RULES:
 4. Keep steps short (max 2 sentences)
 5. Add "Why:" after complex steps to explain reasoning
 
+CRITICAL: Use PLAIN TEXT ONLY. No markdown formatting like ** or * or __.
+
 Return the step-by-step version."""
 
-        step_content = await self.generate(step_prompt, temperature=0.3, max_tokens=700)
+        step_content = strip_markdown(await self.generate(step_prompt, temperature=0.3, max_tokens=700))
         
         # Key ideas mode
         key_ideas_prompt = f"""Extract KEY IDEAS from this content as bullet points.
@@ -300,18 +324,21 @@ RULES:
 1. 3-5 key ideas maximum
 2. Each idea in one sentence
 3. Start with the most important idea
-4. Use "→" to show cause-effect relationships
+4. Use arrows to show cause-effect relationships
 5. Make each point standalone and memorable
 
-Return as bullet points (use • symbol)."""
+CRITICAL: Use PLAIN TEXT ONLY. No markdown formatting like ** or * or __.
+Use the bullet symbol or dashes for list items.
 
-        key_ideas_content = await self.generate(key_ideas_prompt, temperature=0.3, max_tokens=400)
+Return as bullet points."""
+
+        key_ideas_content = strip_markdown(await self.generate(key_ideas_prompt, temperature=0.3, max_tokens=400))
         
         # Extract bullet points from key ideas
         bullet_points = [
-            line.strip().lstrip('•').strip() 
+            strip_markdown(line.strip().lstrip('•-').strip())
             for line in key_ideas_content.split('\n') 
-            if line.strip().startswith('•') or line.strip().startswith('-')
+            if line.strip() and (line.strip().startswith('•') or line.strip().startswith('-') or line.strip()[0].isdigit())
         ]
         
         return {

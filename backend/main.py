@@ -834,6 +834,129 @@ async def stream_tts(request: TTSRequest):
 
 
 # ============================================
+# VOICE ASSISTANT ENDPOINTS
+# ============================================
+
+from core.voice import voice_assistant, VoiceMode
+
+
+class VoiceInputRequest(BaseModel):
+    """Request model for voice input processing."""
+    text: str  # Transcribed text from browser's Speech Recognition
+    mode: Optional[str] = "conversation"  # conversation, explain, quiz, doubt
+    topic: Optional[str] = None
+    session_id: Optional[str] = None
+
+
+class VoiceGreetingRequest(BaseModel):
+    """Request model for voice greeting."""
+    topic: Optional[str] = None
+    session_id: Optional[str] = None
+
+
+@app.post("/api/voice/process")
+async def process_voice_input(request: VoiceInputRequest):
+    """
+    Process voice input and return AI response with audio.
+    
+    Flow:
+    1. Frontend captures user speech via Web Speech API
+    2. Transcribed text is sent here
+    3. AI generates a contextual response
+    4. Response is converted to speech and returned
+    
+    Returns JSON with:
+    - text: Response text
+    - audio_base64: Base64 encoded MP3 audio
+    """
+    try:
+        # Get mode enum
+        mode = VoiceMode.CONVERSATION
+        if request.mode:
+            try:
+                mode = VoiceMode(request.mode)
+            except ValueError:
+                pass
+        
+        # Get profile from session if available
+        profile = None
+        session_context = None
+        if request.session_id:
+            session = session_manager.get_session(request.session_id)
+            if session:
+                profile = session.learner_profile.model_dump()
+                session_context = f"Learning {session.current_topic}" if session.current_topic else None
+        
+        # Process the voice input
+        result = await voice_assistant.process_voice_input(
+            text=request.text,
+            mode=mode,
+            topic=request.topic,
+            profile=profile,
+            session_context=session_context
+        )
+        
+        return result
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Voice processing failed: {str(e)}"
+        )
+
+
+@app.post("/api/voice/greeting")
+async def get_voice_greeting(request: VoiceGreetingRequest):
+    """
+    Get an initial voice greeting when starting voice mode.
+    Returns greeting text and audio.
+    """
+    try:
+        result = await voice_assistant.get_greeting(topic=request.topic)
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Greeting generation failed: {str(e)}"
+        )
+
+
+@app.post("/api/voice/clear")
+async def clear_voice_history():
+    """Clear voice conversation history."""
+    voice_assistant.clear_history()
+    return {"success": True, "message": "Conversation history cleared"}
+
+
+@app.post("/api/voice/tts")
+async def voice_text_to_speech(request: TTSRequest):
+    """
+    Convert text to natural speech for voice assistant.
+    Uses optimized settings for conversational output.
+    """
+    try:
+        audio_bytes = await voice_assistant.text_to_speech(
+            text=request.text,
+            voice=request.voice,
+            rate=request.rate or "+5%"  # Slightly faster for natural conversation
+        )
+        
+        return StreamingResponse(
+            iter([audio_bytes]),
+            media_type="audio/mpeg",
+            headers={
+                "Content-Disposition": "inline",
+                "Cache-Control": "no-cache"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Voice TTS failed: {str(e)}"
+        )
+
+
+# ============================================
 # PROFILE MANAGEMENT
 # ============================================
 

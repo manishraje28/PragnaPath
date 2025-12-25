@@ -81,30 +81,43 @@ YOUR TEACHING PHILOSOPHY:
 - Incorporate Indian cultural references and analogies when appropriate
 - Be encouraging and patient - learning is a journey
 
+IMPORTANT FORMATTING RULES:
+- NEVER use markdown formatting like **bold** or *italic* or __underline__
+- Use PLAIN TEXT only throughout your responses
+- Use CAPITAL LETTERS for emphasis instead of bold
+- Use numbered lists (1. 2. 3.) or dashes (-) for bullet points
+- For diagrams, use ASCII box-drawing characters (see VISUAL_MENTAL style)
+
 TEACHING STYLES YOU CAN USE:
 
 1. STORY_ANALOGY (for conceptual learners):
    - Start with a relatable story or real-world scenario
-   - Use everyday Indian examples (trains, markets, festivals)
-   - Build intuition before introducing formal terms
+   - Use everyday Indian examples (trains, markets, festivals, cricket)
+   - Build intuition BEFORE introducing formal terms
    - End with "So basically..." summary
+   - Keep it conversational and engaging
 
-2. STEP_BY_STEP (for visual learners):
-   - Break down into numbered steps
-   - Use clear transitions: "First... Then... Finally..."
+2. STEP_BY_STEP (for structured learners):
+   - Break down into numbered steps (Step 1, Step 2, Step 3...)
+   - Use clear transitions: "First... Then... Next... Finally..."
+   - Each step should build on the previous one
    - Include mental visualization cues
-   - Draw connections between steps
+   - Make it methodical and clear
 
 3. EXAM_SMART (for exam-focused learners):
-   - Start with the formal definition
-   - List key points and important terms
-   - Mention common exam patterns
-   - Include mnemonics if helpful
+   - Start with the FORMAL DEFINITION
+   - List KEY POINTS that examiners look for
+   - Mention important TERMS and their meanings
+   - Include common EXAM PATTERNS for this topic
+   - Add mnemonics to remember (like MHNC for deadlock conditions)
+   - Be concise and focused on what gets marks
 
 4. VISUAL_MENTAL (for diagram-oriented learners):
-   - Describe visual layouts in words
-   - Use ASCII art or structured text
-   - Reference how things would look on paper
+   - MUST include ASCII diagrams using box-drawing characters
+   - Use proper boxes: ┌ ─ ┐ │ └ ┘ and arrows: → ← ↓ ↑
+   - Create flowcharts and state diagrams
+   - Use TABLES for comparisons
+   - Make the explanation visually structured
 
 CRITICAL RULE:
 The SAME concept must be explained DIFFERENTLY based on the learner profile.
@@ -214,23 +227,73 @@ Use the EXAM-SMART approach:
 - Be concise and focused on what gets marks""",
             
             TeachingStyle.VISUAL_MENTAL: """
-Use the VISUAL/MENTAL MODEL approach - this learner is a VISUAL learner:
-- MUST include ASCII art diagrams or text-based visual representations
-- Use boxes, arrows, and structured layouts to show relationships
-- Create mental pictures using spatial descriptions (left, right, above, below)
-- Use TABLES or GRIDS to compare concepts side by side
-- Draw flowcharts using text characters like [Box] --> [Box]
-- Show processes as visual flows: Input → Process → Output
-- Use indentation and formatting to create visual hierarchy
-- Include a simple diagram that they could draw on paper
-- Reference colors and shapes when describing mental models
-- Example format for a simple diagram:
-  ```
-  ┌─────────┐     ┌─────────┐
-  │  Input  │ --> │ Process │ --> Output
-  └─────────┘     └─────────┘
-  ```
-- Make the explanation look different from pure text"""
+Use the VISUAL/MENTAL MODEL approach - this learner is a VISUAL learner.
+You MUST create clear, professional ASCII block diagrams.
+
+DIAGRAM RULES (VERY IMPORTANT):
+1. Use ONLY these characters for boxes and arrows:
+   - Horizontal lines: ─ (not -)
+   - Vertical lines: │ (not |)
+   - Corners: ┌ ┐ └ ┘
+   - Arrows: → ← ↓ ↑ ▼ ▲
+   - Connections: ├ ┤ ┬ ┴ ┼
+
+2. Keep diagrams SIMPLE and CLEAN - max 4-5 boxes per row
+3. Align everything perfectly with consistent spacing
+4. Add clear labels INSIDE boxes
+
+EXAMPLE 1 - PROCESS FLOW (Horizontal):
+
+    ┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
+    │  INPUT   │────→│ PROCESS  │────→│  CHECK   │────→│  OUTPUT  │
+    └──────────┘     └──────────┘     └──────────┘     └──────────┘
+
+EXAMPLE 2 - DECISION FLOW (with branches):
+
+                         ┌──────────────┐
+                         │    START     │
+                         └──────┬───────┘
+                                │
+                                ▼
+                         ┌──────────────┐
+                    ┌────│  CONDITION?  │────┐
+                    │    └──────────────┘    │
+                    │                        │
+                    ▼ YES                NO  ▼
+             ┌──────────┐             ┌──────────┐
+             │ Action A │             │ Action B │
+             └──────────┘             └──────────┘
+
+EXAMPLE 3 - RESOURCE ALLOCATION DIAGRAM:
+
+    ┌─────────────┐         ┌─────────────┐
+    │  PROCESS A  │◄───────►│ RESOURCE 1  │
+    └─────────────┘         └─────────────┘
+          │                       ▲
+          │ Wants                 │ Held by
+          ▼                       │
+    ┌─────────────┐         ┌─────────────┐
+    │ RESOURCE 2  │◄────────│  PROCESS B  │
+    └─────────────┘  Wants  └─────────────┘
+
+EXAMPLE 4 - COMPARISON TABLE:
+
+    ┌────────────────┬─────────────┬─────────────┐
+    │    FEATURE     │   TYPE A    │   TYPE B    │
+    ├────────────────┼─────────────┼─────────────┤
+    │ Speed          │ Fast        │ Slow        │
+    │ Memory         │ High        │ Low         │
+    │ Complexity     │ O(n)        │ O(n²)       │
+    └────────────────┴─────────────┴─────────────┘
+
+REQUIREMENTS:
+- Start explanation with a clear ASCII diagram
+- Explain what each part of the diagram represents
+- Use numbered points to walk through the diagram
+- End with key takeaways and a question
+
+- Make diagrams CENTERED and CLEAN with proper spacing
+- NO markdown formatting like ** or __ - use plain text only"""
         }
         
         re_explain_context = ""
@@ -257,17 +320,25 @@ ADDITIONAL REQUIREMENTS:
 - Confidence: {profile.confidence.value} ({"be extra encouraging and supportive" if profile.confidence.value == "low" else "challenge them appropriately" if profile.confidence.value == "high" else "balanced encouragement"})
 - Depth: {profile.depth_preference.value}
 
+CRITICAL FORMATTING RULES:
+- DO NOT use markdown formatting like **bold** or *italic* or __underline__
+- Use PLAIN TEXT only - no asterisks, no underscores for emphasis
+- Use CAPITAL LETTERS for emphasis instead of bold
+- Use bullet points with simple dashes (-) or numbers (1. 2. 3.)
+- Keep text clean and readable without any special formatting characters
+- For diagrams, use proper ASCII box-drawing characters (┌ ─ ┐ │ └ ┘ → ← ↓ ↑)
+
 Generate the explanation. At the end, include:
-1. 3 key takeaways (as a list)
+1. 3 key takeaways (as a list with dashes)
 2. A follow-up question to check understanding
 
 Format your response as:
 [EXPLANATION]
-Your explanation here...
+Your explanation here (NO markdown, plain text only)...
 
 [KEY TAKEAWAYS]
 - Takeaway 1
-- Takeaway 2
+- Takeaway 2  
 - Takeaway 3
 
 [FOLLOW-UP QUESTION]
@@ -289,7 +360,8 @@ Your question here?"""
         )
     
     def _parse_explanation_response(self, response: str) -> tuple:
-        """Parse the structured explanation response."""
+        """Parse the structured explanation response and clean markdown."""
+        from agents.base import strip_markdown
         
         # Default values
         explanation = response
@@ -309,16 +381,19 @@ Your question here?"""
                     # Extract takeaways
                     takeaway_text = takeaway_parts[0].strip()
                     takeaways = [
-                        line.strip().lstrip("- •").strip() 
+                        strip_markdown(line.strip().lstrip("- •").strip())
                         for line in takeaway_text.split("\n") 
                         if line.strip() and line.strip().startswith(("-", "•", "1", "2", "3"))
                     ][:3]
                     
                     # Extract follow-up
                     if len(takeaway_parts) > 1:
-                        follow_up = takeaway_parts[1].strip()
+                        follow_up = strip_markdown(takeaway_parts[1].strip())
         except Exception:
             pass
+        
+        # Clean markdown from explanation
+        explanation = strip_markdown(explanation)
         
         return explanation, takeaways or ["Understanding the core concept", "Seeing real-world applications", "Knowing when to apply it"], follow_up
     

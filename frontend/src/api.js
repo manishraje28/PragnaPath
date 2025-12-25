@@ -10,6 +10,61 @@ const api = axios.create({
 });
 
 // ============================================
+// TEXT CLEANUP UTILITIES
+// ============================================
+
+/**
+ * Strip markdown formatting from text for clean display
+ * Removes **bold**, *italic*, __underline__, etc.
+ */
+export const stripMarkdown = (text) => {
+  if (!text) return text;
+  
+  let cleaned = text;
+  
+  // Remove bold (**text** or __text__)
+  cleaned = cleaned.replace(/\*\*(.+?)\*\*/g, '$1');
+  cleaned = cleaned.replace(/__(.+?)__/g, '$1');
+  
+  // Remove italic (*text* or _text_) - careful not to remove underscores in words
+  cleaned = cleaned.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '$1');
+  
+  // Remove code backticks (but keep content)
+  cleaned = cleaned.replace(/`(.+?)`/g, '$1');
+  
+  // Remove markdown headers
+  cleaned = cleaned.replace(/^#{1,6}\s*/gm, '');
+  
+  // Clean up double spaces
+  cleaned = cleaned.replace(/  +/g, ' ');
+  
+  return cleaned.trim();
+};
+
+/**
+ * Clean response data by stripping markdown from text fields
+ */
+export const cleanResponseData = (data) => {
+  if (!data) return data;
+  if (typeof data === 'string') return stripMarkdown(data);
+  if (Array.isArray(data)) return data.map(cleanResponseData);
+  if (typeof data === 'object') {
+    const cleaned = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (typeof value === 'string' && ['content', 'explanation', 'front', 'back', 'dyslexia_friendly', 'screen_reader_friendly', 'simplified_version', 'simplified', 'one_line_summary'].includes(key)) {
+        cleaned[key] = stripMarkdown(value);
+      } else if (typeof value === 'object') {
+        cleaned[key] = cleanResponseData(value);
+      } else {
+        cleaned[key] = value;
+      }
+    }
+    return cleaned;
+  }
+  return data;
+};
+
+// ============================================
 // SESSION PERSISTENCE HELPERS
 // ============================================
 const SESSION_STORAGE_KEY = 'pragnapath_session_id';
@@ -201,7 +256,7 @@ export const getExplanation = async (sessionId, topic, subtopic = null) => {
     topic,
     subtopic,
   });
-  return response.data;
+  return cleanResponseData(response.data);
 };
 
 export const getReExplanation = async (sessionId, topic, trigger = 'user_request') => {
@@ -210,7 +265,7 @@ export const getReExplanation = async (sessionId, topic, trigger = 'user_request
     topic,
     trigger,
   });
-  return response.data;
+  return cleanResponseData(response.data);
 };
 
 export const compareExplanations = async (sessionId, topic) => {
@@ -218,7 +273,7 @@ export const compareExplanations = async (sessionId, topic) => {
     session_id: sessionId,
     topic,
   });
-  return response.data;
+  return cleanResponseData(response.data);
 };
 
 // Content Generation APIs
@@ -228,7 +283,7 @@ export const generateContent = async (sessionId, topic, contentType = 'all') => 
     topic,
     content_type: contentType,
   });
-  return response.data;
+  return cleanResponseData(response.data);
 };
 
 export const generateQuiz = async (sessionId, topic, previousResults = []) => {
@@ -237,13 +292,13 @@ export const generateQuiz = async (sessionId, topic, previousResults = []) => {
     topic,
     previous_results: previousResults,
   });
-  return response.data;
+  return cleanResponseData(response.data);
 };
 
 // Accessibility APIs
 export const transformAccessibility = async (content, mode = 'all') => {
   const response = await api.post('/api/accessibility/transform', { content, mode });
-  return response.data;
+  return cleanResponseData(response.data);
 };
 
 // Profile APIs

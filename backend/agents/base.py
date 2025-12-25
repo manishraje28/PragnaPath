@@ -55,6 +55,35 @@ from google.adk.agents import LlmAgent, Agent
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
+import re
+
+
+def strip_markdown(text: str) -> str:
+    """
+    Remove markdown formatting from text for clean display.
+    Removes **bold**, *italic*, __underline__, etc.
+    """
+    if not text:
+        return text
+    
+    # Remove bold (**text** or __text__)
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    text = re.sub(r'__(.+?)__', r'\1', text)
+    
+    # Remove italic (*text* or _text_) - but be careful not to remove underscores in words
+    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'\1', text)
+    text = re.sub(r'(?<!_)_(?!_)(.+?)(?<!_)_(?!_)', r'\1', text)
+    
+    # Remove code backticks (but keep the content)
+    text = re.sub(r'`(.+?)`', r'\1', text)
+    
+    # Remove markdown headers (#, ##, ###)
+    text = re.sub(r'^#{1,6}\s*', '', text, flags=re.MULTILINE)
+    
+    # Clean up any double spaces
+    text = re.sub(r'  +', ' ', text)
+    
+    return text.strip()
 
 
 def create_llm_agent(

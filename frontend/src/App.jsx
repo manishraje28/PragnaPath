@@ -10,6 +10,7 @@ import AgentIndicator from './components/AgentIndicator';
 import AgentTracePanel from './components/AgentTracePanel';
 import DemoMode from './components/DemoMode';
 import LearningIntentSelector from './components/LearningIntentSelector';
+import VoiceButton from './components/VoiceButton';
 import { startSession, getTopics, getStoredSessionId, getStoredProfile, clearStoredSession } from './api';
 
 function App() {
@@ -366,6 +367,17 @@ function App() {
           </motion.div>
         </AnimatePresence>
       </main>
+
+      {/* Voice Assistant - Available during learning */}
+      {(currentPhase === 'learning' || currentPhase === 'diagnostic') && (
+        <VoiceButton
+          topic={currentTopic}
+          sessionId={sessionId}
+          onTranscript={(text) => {
+            addTrace('voice', 'User spoke', text);
+          }}
+        />
+      )}
 
       {/* Footer */}
       <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 py-3">
