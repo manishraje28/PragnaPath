@@ -118,7 +118,9 @@ export default function LearningView({
     }
   };
 
-  // Generate visualization
+  // Generate AI concept image (or mermaid fallback)
+  const [vizLoading, setVizLoading] = useState(false);
+
   const handleGenerateVisualization = async () => {
     if (visualization) {
       setShowVisualization(!showVisualization);
@@ -126,15 +128,17 @@ export default function LearningView({
     }
     
     try {
+      setVizLoading(true);
       onAgentChange('gurukulguide');
-      if (addTrace) addTrace('gurukulguide', 'Generating visual diagram', topic, 'in-progress');
+      if (addTrace) addTrace('gurukulguide', 'Generating AI concept image', topic, 'in-progress');
       const data = await getVisualization(sessionId, topic);
       
-      // Validate we got valid data
-      if (data && (data.mermaid || data.nodes)) {
+      // Handle both AI image and mermaid responses
+      if (data && (data.image || data.mermaid || data.nodes)) {
         setVisualization(data);
         setShowVisualization(true);
-        if (addTrace) addTrace('gurukulguide', 'Diagram generated', 'Mermaid format');
+        const format = data.type === 'generated_image' ? 'AI image' : 'Mermaid diagram';
+        if (addTrace) addTrace('gurukulguide', `Visualization ready (${format})`, topic);
       } else {
         // Set a fallback diagram if data is invalid
         setVisualization({
@@ -144,12 +148,11 @@ export default function LearningView({
           fallback: true
         });
         setShowVisualization(true);
-        if (addTrace) addTrace('gurukulguide', 'Diagram generated', 'Fallback mode');
+        if (addTrace) addTrace('gurukulguide', 'Using fallback diagram', 'Fallback mode');
       }
       onAgentChange(null);
     } catch (error) {
       console.error('Failed to generate visualization:', error);
-      // Still show a fallback diagram instead of nothing
       setVisualization({
         mermaid: `flowchart TD\n    A[${topic}] --> B[Explore]\n    B --> C[Practice]\n    C --> D[Master]`,
         topic: topic,
@@ -159,6 +162,8 @@ export default function LearningView({
       setShowVisualization(true);
       if (addTrace) addTrace('gurukulguide', 'Diagram fallback', 'Using default', 'completed');
       onAgentChange(null);
+    } finally {
+      setVizLoading(false);
     }
   };
 
@@ -496,15 +501,26 @@ export default function LearningView({
           <span className="text-sm">Explain Differently</span>
         </motion.button>
 
-        {/* Generate Visualization */}
+        {/* Generate AI Concept Image */}
         <motion.button
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={handleGenerateVisualization}
-          className="flex items-center justify-center space-x-2 bg-white text-gray-700 px-4 py-3 rounded-xl font-medium border border-gray-200 hover:bg-gray-50 transition-all"
+          disabled={vizLoading}
+          className={`flex items-center justify-center space-x-2 px-4 py-3 rounded-xl font-medium border transition-all ${
+            vizLoading
+              ? 'bg-purple-50 text-purple-400 border-purple-200 cursor-wait'
+              : 'bg-white text-gray-700 border-gray-200 hover:bg-purple-50 hover:border-purple-300 hover:text-purple-700'
+          }`}
         >
-          <Image size={18} />
-          <span className="text-sm">{showVisualization ? 'Hide' : 'Show'} Diagram</span>
+          {vizLoading ? (
+            <Loader2 size={18} className="animate-spin" />
+          ) : (
+            <Sparkles size={18} />
+          )}
+          <span className="text-sm">
+            {vizLoading ? 'Generating...' : showVisualization ? 'Hide Visual' : 'Visualize'}
+          </span>
         </motion.button>
 
         {/* Generate Practice */}
@@ -540,14 +556,19 @@ export default function LearningView({
             className="mb-6"
           >
             <ErrorBoundary 
-              fallbackTitle="Diagram Error"
-              fallbackMessage="Failed to render the diagram. Click try again or regenerate."
+              fallbackTitle="Visualization Error"
+              fallbackMessage="Failed to render. Click try again or regenerate."
               onReset={() => setShowVisualization(false)}
             >
               <VisualizationRenderer
                 visualizationData={visualization}
                 topic={topic}
-                onRegenerate={handleGenerateVisualization}
+                onRegenerate={() => {
+                  setVisualization(null);
+                  setShowVisualization(false);
+                  // Small delay then re-trigger to generate fresh image
+                  setTimeout(() => handleGenerateVisualization(), 100);
+                }}
               />
             </ErrorBoundary>
           </motion.div>

@@ -9,6 +9,15 @@ const api = axios.create({
   },
 });
 
+// Add auth interceptor
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('pragnapath_auth_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 // ============================================
 // TEXT CLEANUP UTILITIES
 // ============================================
@@ -143,6 +152,8 @@ export const getStoredProfile = () => {
 export const storeProfile = (profile) => {
   localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
 };
+
+
 
 // Session APIs - with persistence
 export const startSession = async (topic = null, forceNew = false) => {
@@ -457,7 +468,7 @@ export const createGuestAccount = async () => {
  * Register new user with email and password
  */
 export const registerUser = async (email, password, name = null) => {
-  const response = await api.post('/api/auth/register', {
+  const response = await api.post('/api/auth/signup', {
     email,
     password,
     name

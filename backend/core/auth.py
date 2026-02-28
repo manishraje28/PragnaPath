@@ -11,6 +11,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from pydantic import BaseModel, EmailStr, Field
+from passlib.context import CryptContext
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,7 @@ class AuthService:
         self._db = None
         self._secret_key = os.getenv("JWT_SECRET_KEY", secrets.token_hex(32))
         self._token_expiry_hours = int(os.getenv("TOKEN_EXPIRY_HOURS", "72"))
+        self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
     
     def set_database(self, db):
         """Set the MongoDB database reference."""
@@ -88,27 +90,23 @@ class AuthService:
     # ========================================
     
     def _hash_password(self, password: str) -> str:
-        """Hash password with salt."""
-        salt = secrets.token_hex(16)
-        hash_obj = hashlib.pbkdf2_hmac(
-            'sha256',
-            password.encode(),
-            salt.encode(),
-            100000
-        )
-        return f"{salt}:{hash_obj.hex()}"
+        """Hash password with bcrypt."""
+        return self.pwd_context.hash(password)
     
     def _verify_password(self, password: str, hashed: str) -> bool:
         """Verify password against hash."""
         try:
-            salt, hash_value = hashed.split(':')
-            hash_obj = hashlib.pbkdf2_hmac(
-                'sha256',
-                password.encode(),
-                salt.encode(),
-                100000
-            )
-            return hash_obj.hex() == hash_value
+            if ":" in hashed and not hashed.startswith("$2"):
+                salt, hash_value = hashed.split(':', 1)
+                import hashlib
+                hash_obj = hashlib.pbkdf2_hmac(
+                    'sha256',
+                    password.encode(),
+                    salt.encode(),
+                    100000
+                )
+                return hash_obj.hex() == hash_value
+            return self.pwd_context.verify(password, hashed)
         except Exception:
             return False
     
@@ -208,38 +206,59 @@ class AuthService:
     
     async def register(self, user_data: UserCreate) -> Optional[AuthToken]:
         """Register new user with email and password."""
-        if self._db is None:
-            logger.error("Database not available for registration")
-            return None
-        
-        # Check if email already exists
-        existing = await self._db.users.find_one({"email": user_data.email})
-        if existing:
-            return None  # Email already registered
-        
+        # If a real DB is attached, use it. Otherwise fall back to the persistence
+        # layer which supports an in-memory store for local development.
         now = datetime.utcnow()
         import uuid
         user_id = f"user_{uuid.uuid4().hex[:12]}"
-        
-        new_user = {
-            "user_id": user_id,
-            "email": user_data.email,
-            "password_hash": self._hash_password(user_data.password),
-            "name": user_data.name or user_data.email.split('@')[0],
-            "is_guest": False,
-            "created_at": now,
-            "last_seen": now,
-            "learner_profile": None
-        }
-        
-        try:
-            await self._db.users.insert_one(new_user)
-        except Exception as e:
-            logger.error(f"Registration failed: {e}")
-            return None
-        
+
+        if self._db is not None:
+            # Check if email already exists
+            existing = await self._db.users.find_one({"email": user_data.email})
+            if existing:
+                return None  # Email already registered
+
+            new_user = {
+                "user_id": user_id,
+                "email": user_data.email,
+                "password_hash": self._hash_password(user_data.password),
+                "name": user_data.name or user_data.email.split('@')[0],
+                "is_guest": False,
+                "created_at": now,
+                "last_seen": now,
+                "learner_profile": None
+            }
+
+            try:
+                await self._db.users.insert_one(new_user)
+            except Exception as e:
+                logger.error(f"Registration failed: {e}")
+                return None
+
+        else:
+            # Use persistence layer's create_user_account for in-memory fallback
+            new_user = {
+                "user_id": user_id,
+                "email": user_data.email,
+                "password_hash": self._hash_password(user_data.password),
+                "name": user_data.name or user_data.email.split('@')[0],
+                "is_guest": False,
+                "created_at": now,
+                "last_seen": now,
+                "learner_profile": None
+            }
+
+            try:
+                created = await user_persistence.create_user_account(new_user)
+                if not created:
+                    logger.error("In-memory registration failed or email already exists")
+                    return None
+            except Exception as e:
+                logger.error(f"In-memory registration error: {e}")
+                return None
+
         token, expiry = self._generate_token(user_id, user_data.email)
-        
+
         return AuthToken(
             access_token=token,
             expires_in=expiry,

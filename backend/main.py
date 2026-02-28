@@ -44,6 +44,7 @@ from core.models import (
 from core.persistence import user_persistence
 from core.models import LearnerProfile as LearnerProfileModel
 from core.tts import tts_service, IndianVoice, TTSService
+from core.auth import auth_service, UserCreate, UserLogin, AuthToken, UserResponse
 
 
 # ============================================
@@ -126,9 +127,23 @@ app = FastAPI(
 
 
 # CORS for frontend
+origins = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002", 
+    "http://localhost:3003",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173"
+]
+
+# Add production domains if configured
+if os.getenv("FRONTEND_URL"):
+    origins.append(os.getenv("FRONTEND_URL"))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173", "*"],
+    allow_origins=origins, # Use the list defined above
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -188,6 +203,59 @@ class UpdateProfileRequest(BaseModel):
     pace: Optional[str] = None
     confidence: Optional[str] = None
     depth_preference: Optional[str] = None
+
+# ============================================
+# AUTH ROUTES
+# ============================================
+
+@app.post("/api/auth/signup", response_model=AuthToken)
+async def signup(user_in: UserCreate):
+    """Register a new user."""
+    # Ensure auth service has persistence connection
+    if not auth_service.is_available and user_persistence.is_connected:
+        auth_service.set_database(user_persistence._db)
+        
+    token = await auth_service.register(user_in)
+    if not token:
+        raise HTTPException(
+            status_code=400,
+            detail="Registration failed. Email might be taken or system error."
+        )
+    return token
+
+@app.post("/api/auth/login", response_model=AuthToken)
+async def login(credentials: UserLogin):
+    """Login with email and password."""
+    # Ensure auth service has persistence connection
+    if not auth_service.is_available and user_persistence.is_connected:
+        auth_service.set_database(user_persistence._db)
+        
+    token = await auth_service.login(credentials)
+    if not token:
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect email or password."
+        )
+    return token
+
+@app.get("/api/auth/me", response_model=UserResponse)
+async def get_current_user(request: Request):
+    """Get current user info from token."""
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing token")
+    
+    token = auth_header.split(" ")[1]
+    user_data = auth_service.verify_token(token)
+    if not user_data:
+        raise HTTPException(status_code=401, detail="Invalid token")
+        
+    user = await auth_service.get_user(user_data["user_id"])
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    return user
+
 
 
 # ============================================
@@ -921,6 +989,57 @@ async def get_voice_greeting(request: VoiceGreetingRequest):
         )
 
 
+@app.post("/api/voice/transcribe")
+async def transcribe_audio(request: Request):
+    """
+    Transcribe audio using Gemini (cross-browser speech-to-text).
+    Accepts audio blob from MediaRecorder API (webm/ogg/mp4).
+    Returns transcribed text.
+    """
+    try:
+        from google import genai
+        from google.genai import types
+        import asyncio
+        
+        content_type = request.headers.get("content-type", "audio/webm")
+        audio_bytes = await request.body()
+        
+        if len(audio_bytes) < 100:
+            return {"success": False, "text": "", "error": "Audio too short"}
+        
+        api_key = os.getenv("GEMINI_API_KEY", os.getenv("GOOGLE_API_KEY", ""))
+        client = genai.Client(api_key=api_key)
+        
+        # Determine mime type
+        mime = "audio/webm"
+        if "ogg" in content_type:
+            mime = "audio/ogg"
+        elif "mp4" in content_type or "m4a" in content_type:
+            mime = "audio/mp4"
+        elif "wav" in content_type:
+            mime = "audio/wav"
+        elif "mpeg" in content_type or "mp3" in content_type:
+            mime = "audio/mpeg"
+        
+        # Use Gemini to transcribe
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, lambda: client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=[
+                types.Part.from_bytes(data=audio_bytes, mime_type=mime),
+                "Transcribe this audio accurately. Return ONLY the transcribed text, nothing else. If the audio is unclear or silent, return an empty string."
+            ]
+        ))
+        
+        transcribed = response.text.strip().strip('"').strip("'")
+        
+        return {"success": True, "text": transcribed}
+        
+    except Exception as e:
+        print(f"Transcription error: {e}")
+        return {"success": False, "text": "", "error": str(e)}
+
+
 @app.post("/api/voice/clear")
 async def clear_voice_history():
     """Clear voice conversation history."""
@@ -932,7 +1051,7 @@ async def clear_voice_history():
 async def voice_text_to_speech(request: TTSRequest):
     """
     Convert text to natural speech for voice assistant.
-    Uses optimized settings for conversational output.
+    Uses Gemini Native Audio Dialog with Edge TTS fallback.
     """
     try:
         audio_bytes = await voice_assistant.text_to_speech(
@@ -941,9 +1060,13 @@ async def voice_text_to_speech(request: TTSRequest):
             rate=request.rate or "+5%"  # Slightly faster for natural conversation
         )
         
+        # Detect format from WAV header
+        is_wav = audio_bytes[:4] == b'RIFF' if audio_bytes else False
+        media_type = "audio/wav" if is_wav else "audio/mpeg"
+        
         return StreamingResponse(
             iter([audio_bytes]),
-            media_type="audio/mpeg",
+            media_type=media_type,
             headers={
                 "Content-Disposition": "inline",
                 "Cache-Control": "no-cache"
@@ -1514,67 +1637,110 @@ Return JSON:
 @app.post("/api/visualize")
 async def generate_visualization(request: VisualizationRequest):
     """
-    Generate structured visualization data for a topic.
-    Returns Mermaid-compatible diagram code.
+    Generate an AI-created educational concept image for a topic.
+    Uses Gemini 2.5 Flash Image (500 RPM, 2K RPD).
+    Falls back to Mermaid diagram if image generation fails.
     """
+    import base64, asyncio, traceback, sys
+    from google import genai
+    from google.genai import types as genai_types
+
     session = session_manager.get_session(request.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    
-    gurukulguide: GurukulGuideAgent = app.state.gurukulguide
-    
-    # Generate visualization instructions using AI
-    prompt = f"""Generate a Mermaid diagram for the concept: "{request.topic}"
 
-Create a clear, educational diagram. Choose the appropriate type:
-- flowchart TD for processes/flows
-- stateDiagram-v2 for state machines
-- sequenceDiagram for interactions
+    api_key = os.getenv("GOOGLE_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Google API key not configured")
 
-Return ONLY valid Mermaid code, nothing else. Keep it simple and readable.
-Maximum 10 nodes for clarity.
+    prompt = f"""Create a clear, educational CONCEPT VISUALIZATION IMAGE for the computer science topic: "{request.topic}"
 
-Example formats:
-flowchart TD
-    A[Start] --> B{{Decision}}
-    B -->|Yes| C[Action 1]
-    B -->|No| D[Action 2]
+INSTRUCTIONS:
+- Design it like a professional textbook infographic or concept map
+- Include labeled components with arrows showing relationships and data flow
+- Use distinct colors to separate different stages, components, or categories
+- Add concise annotations next to each element explaining its role
+- Include a clear title at the top: "{request.topic}"
+- Show the PROCESS or STRUCTURE step by step so a student can follow along
+- Use icons, boxes, and visual metaphors where appropriate
+- Make all text in the image legible and well-spaced
+- The image should be SELF-EXPLANATORY
+- Keep the overall design clean, uncluttered, and modern
 
-stateDiagram-v2
-    [*] --> State1
-    State1 --> State2: event
-    State2 --> [*]"""
+TOPIC CONTEXT: Computer Science student learning about {request.topic}."""
 
     try:
-        response = await gurukulguide.generate(prompt, temperature=0.3)
-        
-        # Clean up the response
-        mermaid_code = response.strip()
-        
-        # Remove markdown code blocks if present
-        if mermaid_code.startswith("```"):
-            lines = mermaid_code.split("\n")
-            mermaid_code = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
-        
-        return {
-            "mermaid": mermaid_code,
-            "topic": request.topic,
-            "type": "mermaid"
-        }
+        client = genai.Client(api_key=api_key)
+        print(f"📸 Generating image for: {request.topic}", file=sys.stderr, flush=True)
+
+        response = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: client.models.generate_content(
+                model="gemini-2.5-flash-image",
+                contents=prompt,
+                config=genai_types.GenerateContentConfig(
+                    response_modalities=["IMAGE", "TEXT"],
+                    temperature=0.4,
+                )
+            )
+        )
+
+        image_data = None
+        mime_type = "image/png"
+        description = ""
+
+        if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+            for part in response.candidates[0].content.parts:
+                if part.inline_data is not None:
+                    image_data = base64.b64encode(part.inline_data.data).decode("utf-8")
+                    mime_type = part.inline_data.mime_type or "image/png"
+                    print(f"  ✅ Image: {len(part.inline_data.data)} bytes", file=sys.stderr, flush=True)
+                elif part.text:
+                    description = part.text
+
+        if image_data:
+            return {
+                "image": image_data,
+                "mime_type": mime_type,
+                "description": description,
+                "topic": request.topic,
+                "type": "generated_image"
+            }
+
+        raise Exception("No image data in response")
+
     except Exception as e:
-        # Fallback with a simple diagram
-        fallback = f"""flowchart TD
-    A[{request.topic}] --> B[Key Concept 1]
-    A --> C[Key Concept 2]
-    B --> D[Detail 1]
-    C --> E[Detail 2]"""
-        
-        return {
-            "mermaid": fallback,
-            "topic": request.topic,
-            "type": "mermaid",
-            "fallback": True
-        }
+        print(f"⚠️ Image gen failed: {e}", file=sys.stderr, flush=True)
+        traceback.print_exc(file=sys.stderr)
+        # Fallback: generate a Mermaid diagram using the text model
+        try:
+            gurukulguide: GurukulGuideAgent = app.state.gurukulguide
+            mermaid_prompt = f"""Generate a Mermaid flowchart diagram for: "{request.topic}"
+Return ONLY valid Mermaid code. Maximum 10 nodes. Keep it simple and readable.
+Example: flowchart TD
+    A[Start] --> B{{Decision}}
+    B -->|Yes| C[Action 1]
+    B -->|No| D[Action 2]"""
+
+            mermaid_response = await gurukulguide.generate(mermaid_prompt, temperature=0.3)
+            mermaid_code = mermaid_response.strip()
+            if mermaid_code.startswith("```"):
+                lines = mermaid_code.split("\n")
+                mermaid_code = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
+
+            return {
+                "mermaid": mermaid_code,
+                "topic": request.topic,
+                "type": "mermaid",
+                "fallback": True
+            }
+        except Exception:
+            return {
+                "mermaid": f'flowchart TD\n    A[{request.topic}] --> B[Key Concept 1]\n    A --> C[Key Concept 2]\n    B --> D[Detail 1]\n    C --> E[Detail 2]',
+                "topic": request.topic,
+                "type": "mermaid",
+                "fallback": True
+            }
 
 
 @app.post("/api/accessibility/sign-language")

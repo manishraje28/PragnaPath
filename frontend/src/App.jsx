@@ -15,7 +15,7 @@ import { startSession, getTopics, getStoredSessionId, getStoredProfile, clearSto
 
 function App() {
   // App state
-  const [currentPhase, setCurrentPhase] = useState('welcome'); // welcome, topic, intent, diagnostic, learning, demo
+  const [currentPhase, setCurrentPhase] = useState('welcome'); // welcome, topic, intent, diagnostic, learning
   const [sessionId, setSessionId] = useState(null);
   const [profile, setProfile] = useState(null);
   const [previousProfile, setPreviousProfile] = useState(null);
@@ -57,13 +57,12 @@ function App() {
     const restoreSession = async () => {
       const storedSessionId = getStoredSessionId();
       const storedProfile = getStoredProfile();
-      
+    
       if (storedSessionId && storedProfile) {
         console.log('Restoring session:', storedSessionId);
         setSessionId(storedSessionId);
         setProfile(storedProfile);
         addTrace('sutradhar', 'Session restored from storage', `Session ID: ${storedSessionId}`);
-        // Go directly to topic selection since we have a session
         setCurrentPhase('topic');
       }
     };
@@ -138,6 +137,7 @@ function App() {
     setCurrentPhase('welcome');
   };
 
+
   // Handle topic selection
   const handleTopicSelect = (topic) => {
     addTrace('sutradhar', 'Topic selected', topic);
@@ -192,12 +192,6 @@ function App() {
         return (
           <WelcomeScreen 
             onStart={() => handleStartSession()} 
-            /* Demo mode commented out for now
-            onDemo={() => {
-              setIsDemoMode(true);
-              setCurrentPhase('demo');
-            }}
-            */
           />
         );
       
@@ -368,8 +362,8 @@ function App() {
         </AnimatePresence>
       </main>
 
-      {/* Voice Assistant - Available during learning */}
-      {(currentPhase === 'learning' || currentPhase === 'diagnostic') && (
+      {/* Voice Assistant - Available only during learning/explanation */}
+      {currentPhase === 'learning' && (
         <VoiceButton
           topic={currentTopic}
           sessionId={sessionId}

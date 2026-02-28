@@ -187,6 +187,68 @@ class UserPersistence:
                 self._in_memory_store[user_id].get("session_count", 0) + 1
         
         return self._in_memory_store[user_id].copy()
+
+    async def create_user_account(self, user_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Create a new user account with credentials."""
+        if self._connected and self._db is not None:
+             return await self._create_user_mongo(user_data)
+        # For in-memory, we can store in _in_memory_store but password auth implies persistence
+        logger.warning("Creating user account in memory (not persistent across restarts)")
+        return self._create_user_memory(user_data)
+
+    async def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """Get user by email."""
+        if self._connected and self._db is not None:
+            return await self._get_user_by_email_mongo(email)
+        return self._get_user_by_email_memory(email)
+        
+    async def _create_user_mongo(self, user_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        try:
+            # Check if exists
+            existing = await self._db.users.find_one({"email": user_data["email"]})
+            if existing:
+                return None
+            
+            # Insert
+            user_data["created_at"] = datetime.utcnow()
+            user_data["last_seen"] = datetime.utcnow()
+            # Ensure user_id is set if not provided (though auth service should provide it)
+            if "user_id" not in user_data:
+                user_data["user_id"] = str(uuid.uuid4())
+
+            result = await self._db.users.insert_one(user_data)
+            user_data["_id"] = str(result.inserted_id)
+            return user_data
+        except Exception as e:
+            logger.error(f"MongoDB create user error: {e}")
+            return None
+
+    async def _get_user_by_email_mongo(self, email: str) -> Optional[Dict[str, Any]]:
+        try:
+            user = await self._db.users.find_one({"email": email})
+            if user:
+                user["_id"] = str(user["_id"])
+            return user
+        except Exception as e:
+            logger.error(f"MongoDB get user error: {e}")
+            return None
+
+    def _create_user_memory(self, user_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        for u in self._in_memory_store.values():
+            if isinstance(u, dict) and u.get("email") == user_data["email"]:
+                return None
+        
+        user_id = user_data.get("user_id", str(uuid.uuid4()))
+        user_data["user_id"] = user_id
+        user_data["created_at"] = datetime.utcnow()
+        self._in_memory_store[user_id] = user_data
+        return user_data
+
+    def _get_user_by_email_memory(self, email: str) -> Optional[Dict[str, Any]]:
+        for u in self._in_memory_store.values():
+            if isinstance(u, dict) and u.get("email") == email:
+                return u
+        return None
     
     # ========================================
     # LEARNER PROFILE PERSISTENCE (Separate Collection)

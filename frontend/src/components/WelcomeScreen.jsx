@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
-import { Sparkles, Play, Presentation, BookOpen, Brain, Users, Lightbulb } from 'lucide-react';
+import { Sparkles, Play, Presentation, BookOpen, Brain, Users, Lightbulb, ArrowRight } from 'lucide-react';
 
-export default function WelcomeScreen({ onStart, onDemo }) {
+export default function WelcomeScreen({ onStart }) {
   const features = [
     {
       icon: Brain,
@@ -75,30 +75,17 @@ export default function WelcomeScreen({ onStart, onDemo }) {
           Watch as the teaching style transforms in real-time based on your cognitive profile.
         </p>
 
-        {/* CTA Buttons */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={onStart}
-            className="btn-primary flex items-center space-x-2 text-lg px-8 py-4"
-          >
-            <Play size={20} />
-            <span>Start Learning</span>
-          </motion.button>
-
-          {/* Judge Demo Mode button - COMMENTED OUT FOR NOW
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={onDemo}
-            className="btn-secondary flex items-center space-x-2 text-lg px-8 py-4"
-          >
-            <Presentation size={20} />
-            <span>Judge Demo Mode</span>
-          </motion.button>
-          */}
-        </div>
+        {/* Single CTA – Start Learning */}
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.97 }}
+          onClick={onStart}
+          className="btn-primary inline-flex items-center space-x-3 text-lg px-10 py-4 shadow-xl shadow-saffron-500/20"
+        >
+          <Play size={22} />
+          <span>Start Learning</span>
+          <ArrowRight size={18} />
+        </motion.button>
       </motion.div>
 
       {/* Features */}
