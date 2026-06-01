@@ -20,11 +20,14 @@ import re
 from typing import Optional, Dict, Any
 from enum import Enum
 import edge_tts
+import httpx
 from google import genai
 from google.genai import types
 
 # Get API key
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", os.getenv("GOOGLE_API_KEY", ""))
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+USE_GROQ = os.getenv("USE_GROQ", "false").lower() == "true"
 
 
 class VoiceMode(str, Enum):
@@ -58,9 +61,13 @@ class VoiceAssistant:
     """
 
     def __init__(self):
-        self.client = genai.Client(api_key=GEMINI_API_KEY)
-        # Text generation model
-        self.text_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+        if USE_GROQ and GROQ_API_KEY:
+            self.client = None # We will use httpx for Groq
+            self.text_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+        else:
+            self.client = genai.Client(api_key=GEMINI_API_KEY)
+            self.text_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+            
         # Native audio dialog model (Live API - bidiGenerateContent)
         self.audio_model = "gemini-2.5-flash-native-audio-latest"
         # Voice for native audio (Kore = clear, friendly female voice)
@@ -165,21 +172,42 @@ Adapt your explanations to match their style.
 Student says: "{text}"
 
 Respond naturally as a voice assistant (keep it short and conversational):"""
-
-            # Step 1: Generate text response using Gemini 2.5 Flash
-            loop = asyncio.get_event_loop()
-            text_response = await loop.run_in_executor(None, lambda: (
-                self.client.models.generate_content(
-                    model=self.text_model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        temperature=0.8,
-                        max_output_tokens=300,
+            
+            response_text = ""
+            # Step 1: Generate text response using selected provider 
+            if USE_GROQ and GROQ_API_KEY:
+                print(f"[Voice] Generating via Groq Model: {self.text_model}...")
+                async with httpx.AsyncClient(timeout=30.0) as http_client:
+                    res = await http_client.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {GROQ_API_KEY}",
+                            "Content-Type": "application/json"
+                        },
+                        json={
+                            "model": self.text_model,
+                            "messages": [{"role": "user", "content": prompt}],
+                            "temperature": 0.8,
+                            "max_tokens": 300
+                        }
                     )
-                )
-            ))
+                    res.raise_for_status()
+                    data = res.json()
+                    response_text = data["choices"][0]["message"]["content"]
+            else:
+                loop = asyncio.get_event_loop()
+                text_response = await loop.run_in_executor(None, lambda: (
+                    self.client.models.generate_content(
+                        model=self.text_model,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            temperature=0.8,
+                            max_output_tokens=300,
+                        )
+                    )
+                ))
+                response_text = text_response.text.strip()
 
-            response_text = text_response.text.strip()
             response_text = self._clean_for_speech(response_text)
             print(f"[Voice] Text response: {response_text[:100]}...")
 
@@ -194,8 +222,11 @@ Respond naturally as a voice assistant (keep it short and conversational):"""
             # Step 2: Generate native audio from the response text
             audio_base64 = None
             audio_format = "wav"
+            native_audio = None
 
-            native_audio = await self._generate_native_audio(response_text)
+            if not (USE_GROQ and GROQ_API_KEY):
+                native_audio = await self._generate_native_audio(response_text)
+                
             if native_audio:
                 wav_bytes = self._pcm_to_wav(native_audio)
                 audio_base64 = base64.b64encode(wav_bytes).decode('utf-8')
@@ -203,7 +234,7 @@ Respond naturally as a voice assistant (keep it short and conversational):"""
                 print(f"[Voice] Native audio OK: {len(wav_bytes)} bytes WAV")
             else:
                 # Fallback to Edge TTS
-                print("[Voice] Native audio unavailable, using Edge TTS fallback")
+                print("[Voice] Generating speech via Microsoft Edge TTS...")
                 edge_audio = await self._synthesize_speech_edge(response_text)
                 if edge_audio:
                     audio_base64 = base64.b64encode(edge_audio).decode('utf-8')
@@ -357,7 +388,10 @@ Respond naturally as a voice assistant (keep it short and conversational):"""
         clean_text = self._clean_for_speech(text)
 
         # Try native audio first
-        native = await self._generate_native_audio(clean_text)
+        native = None
+        if not (USE_GROQ and GROQ_API_KEY):
+            native = await self._generate_native_audio(clean_text)
+            
         if native:
             return self._pcm_to_wav(native)
 
@@ -423,7 +457,11 @@ Respond naturally as a voice assistant (keep it short and conversational):"""
         # Try native audio for greeting
         audio_base64 = None
         audio_format = "wav"
-        native = await self._generate_native_audio(greeting)
+        native = None
+        
+        if not (USE_GROQ and GROQ_API_KEY):
+            native = await self._generate_native_audio(greeting)
+            
         if native:
             wav_bytes = self._pcm_to_wav(native)
             audio_base64 = base64.b64encode(wav_bytes).decode('utf-8')

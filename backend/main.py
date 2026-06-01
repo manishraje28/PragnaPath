@@ -1007,32 +1007,64 @@ async def transcribe_audio(request: Request):
         if len(audio_bytes) < 100:
             return {"success": False, "text": "", "error": "Audio too short"}
         
-        api_key = os.getenv("GEMINI_API_KEY", os.getenv("GOOGLE_API_KEY", ""))
-        client = genai.Client(api_key=api_key)
+        USE_GROQ = os.getenv("USE_GROQ", "false").lower() == "true"
+        GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
         
-        # Determine mime type
-        mime = "audio/webm"
-        if "ogg" in content_type:
-            mime = "audio/ogg"
-        elif "mp4" in content_type or "m4a" in content_type:
-            mime = "audio/mp4"
-        elif "wav" in content_type:
-            mime = "audio/wav"
-        elif "mpeg" in content_type or "mp3" in content_type:
-            mime = "audio/mpeg"
-        
-        # Use Gemini to transcribe
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(None, lambda: client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=[
-                types.Part.from_bytes(data=audio_bytes, mime_type=mime),
-                "Transcribe this audio accurately. Return ONLY the transcribed text, nothing else. If the audio is unclear or silent, return an empty string."
-            ]
-        ))
-        
-        transcribed = response.text.strip().strip('"').strip("'")
-        
+        if USE_GROQ and GROQ_API_KEY:
+            import httpx
+            import tempfile
+            
+            # Groq's whisper needs a file-like extension to understand the MIME type
+            ext = "webm"
+            if "ogg" in content_type: ext = "ogg"
+            elif "mp4" in content_type or "m4a" in content_type: ext = "mp4"
+            elif "wav" in content_type: ext = "wav"
+            elif "mpeg" in content_type or "mp3" in content_type: ext = "mp3"
+            
+            with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as temp_audio:
+                temp_audio.write(audio_bytes)
+                temp_path = temp_audio.name
+            
+            try:
+                with open(temp_path, "rb") as f:
+                    async with httpx.AsyncClient(timeout=30.0) as http_client:
+                        res = await http_client.post(
+                            "https://api.groq.com/openai/v1/audio/transcriptions",
+                            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+                            files={"file": (f"audio.{ext}", f, content_type)},
+                            data={"model": "whisper-large-v3"}
+                        )
+                        res.raise_for_status()
+                        transcribed = res.json().get("text", "").strip()
+            finally:
+                os.unlink(temp_path)
+                
+        else:
+            api_key = os.getenv("GEMINI_API_KEY", os.getenv("GOOGLE_API_KEY", ""))
+            client = genai.Client(api_key=api_key)
+            
+            # Determine mime type
+            mime = "audio/webm"
+            if "ogg" in content_type:
+                mime = "audio/ogg"
+            elif "mp4" in content_type or "m4a" in content_type:
+                mime = "audio/mp4"
+            elif "wav" in content_type:
+                mime = "audio/wav"
+            elif "mpeg" in content_type or "mp3" in content_type:
+                mime = "audio/mpeg"
+            
+            # Use Gemini to transcribe
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(None, lambda: client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=[
+                    types.Part.from_bytes(data=audio_bytes, mime_type=mime),
+                    "Transcribe this audio accurately. Return ONLY the transcribed text, nothing else. If the audio is unclear or silent, return an empty string."
+                ]
+            ))
+            transcribed = response.text.strip().strip('"').strip("'")
+            
         return {"success": True, "text": transcribed}
         
     except Exception as e:
@@ -1638,76 +1670,43 @@ Return JSON:
 async def generate_visualization(request: VisualizationRequest):
     """
     Generate an AI-created educational concept image for a topic.
-    Uses Gemini 2.5 Flash Image (500 RPM, 2K RPD).
+    Uses Pollinations.ai (100% Free, NO API KEY REQUIRED).
     Falls back to Mermaid diagram if image generation fails.
     """
     import base64, asyncio, traceback, sys
-    from google import genai
-    from google.genai import types as genai_types
+    import urllib.parse
+    import httpx
 
     session = session_manager.get_session(request.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    api_key = os.getenv("GOOGLE_API_KEY", "")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="Google API key not configured")
-
-    prompt = f"""Create a clear, educational CONCEPT VISUALIZATION IMAGE for the computer science topic: "{request.topic}"
-
-INSTRUCTIONS:
-- Design it like a professional textbook infographic or concept map
-- Include labeled components with arrows showing relationships and data flow
-- Use distinct colors to separate different stages, components, or categories
-- Add concise annotations next to each element explaining its role
-- Include a clear title at the top: "{request.topic}"
-- Show the PROCESS or STRUCTURE step by step so a student can follow along
-- Use icons, boxes, and visual metaphors where appropriate
-- Make all text in the image legible and well-spaced
-- The image should be SELF-EXPLANATORY
-- Keep the overall design clean, uncluttered, and modern
-
-TOPIC CONTEXT: Computer Science student learning about {request.topic}."""
+    # Construct the Pollinations URL
+    # Add random seed or timestamp to text if we want strictly unique URLs, but standard prompt is fine.
+    encoded_prompt = urllib.parse.quote(f"A clear, professional textbook educational diagram or infographic explaining the computer science concept: {request.topic}. Includes labels, arrows, clean flat design, white background.")
+    image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=768&nologo=true"
 
     try:
-        client = genai.Client(api_key=api_key)
-        print(f"📸 Generating image for: {request.topic}", file=sys.stderr, flush=True)
+        print(f"📸 Generating image for: {request.topic} using Pollinations.ai", file=sys.stderr, flush=True)
 
-        response = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: client.models.generate_content(
-                model="gemini-2.5-flash-image",
-                contents=prompt,
-                config=genai_types.GenerateContentConfig(
-                    response_modalities=["IMAGE", "TEXT"],
-                    temperature=0.4,
-                )
-            )
-        )
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(image_url)
+            response.raise_for_status()
+            
+            image_bytes = response.content
+            image_data = base64.b64encode(image_bytes).decode("utf-8")
+            mime_type = response.headers.get("content-type", "image/png")
+            description = f"Educational visualization for {request.topic}"
 
-        image_data = None
-        mime_type = "image/png"
-        description = ""
+            print(f"  ✅ Image: {len(image_bytes)} bytes", file=sys.stderr, flush=True)
 
-        if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
-            for part in response.candidates[0].content.parts:
-                if part.inline_data is not None:
-                    image_data = base64.b64encode(part.inline_data.data).decode("utf-8")
-                    mime_type = part.inline_data.mime_type or "image/png"
-                    print(f"  ✅ Image: {len(part.inline_data.data)} bytes", file=sys.stderr, flush=True)
-                elif part.text:
-                    description = part.text
-
-        if image_data:
-            return {
-                "image": image_data,
-                "mime_type": mime_type,
-                "description": description,
-                "topic": request.topic,
-                "type": "generated_image"
-            }
-
-        raise Exception("No image data in response")
+        return {
+            "image": image_data,
+            "mime_type": mime_type,
+            "description": description,
+            "topic": request.topic,
+            "type": "generated_image"
+        }
 
     except Exception as e:
         print(f"⚠️ Image gen failed: {e}", file=sys.stderr, flush=True)
