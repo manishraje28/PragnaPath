@@ -37,16 +37,16 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 if USE_OPENROUTER and OPENROUTER_API_KEY:
     ACTIVE_PROVIDER = "openrouter"
     ACTIVE_MODEL = OPENROUTER_MODEL
-    print(f"🔌 Using OpenRouter with model: {OPENROUTER_MODEL}")
+    print(f"[Provider] Using OpenRouter with model: {OPENROUTER_MODEL}")
 elif USE_GROQ and GROQ_API_KEY:
     ACTIVE_PROVIDER = "groq"
     ACTIVE_MODEL = GROQ_MODEL
-    print(f"🔌 Using Groq with model: {GROQ_MODEL}")
+    print(f"[Provider] Using Groq with model: {GROQ_MODEL}")
 elif GOOGLE_API_KEY:
     ACTIVE_PROVIDER = "google"
     ACTIVE_MODEL = GEMINI_MODEL
     os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
-    print(f"🔌 Using Google ADK with model: {GEMINI_MODEL}")
+    print(f"[Provider] Using Google ADK with model: {GEMINI_MODEL}")
 else:
     raise ValueError("No valid API key found. Set GOOGLE_API_KEY, OPENROUTER_API_KEY, or GROQ_API_KEY")
 

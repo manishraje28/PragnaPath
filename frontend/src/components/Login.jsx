@@ -35,8 +35,8 @@ export default function Login({ onLoginSuccess, onNavigateToSignup }) {
           <div className="mx-auto w-12 h-12 bg-saffron-100 rounded-full flex items-center justify-center mb-4 text-saffron-600">
             <LogIn size={24} />
           </div>
-          <h2 className="text-2xl font-bold text-neural-800">Welcome Back</h2>
-          <p className="text-neural-500 mt-2">Sign in to continue your adaptive learning journey</p>
+          <h2 className="text-2xl font-bold text-gray-800">Welcome Back</h2>
+          <p className="text-gray-500 mt-2">Sign in to continue your adaptive learning journey</p>
         </div>
 
         {error && (
@@ -52,14 +52,14 @@ export default function Login({ onLoginSuccess, onNavigateToSignup }) {
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-sm font-medium text-neural-700 mb-1">Email</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <div className="relative">
-              <User className="absolute left-3 top-3 text-neural-400" size={18} />
+              <User className="absolute left-3 top-3 text-gray-400" size={18} />
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 border border-neural-200 rounded-lg focus:ring-2 focus:ring-saffron-500 focus:border-transparent outline-none transition-all"
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-saffron-500 focus:border-transparent outline-none transition-all"
                 placeholder="you@example.com"
                 required
               />
@@ -67,14 +67,14 @@ export default function Login({ onLoginSuccess, onNavigateToSignup }) {
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-neural-700 mb-1">Password</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
             <div className="relative">
-              <Lock className="absolute left-3 top-3 text-neural-400" size={18} />
+              <Lock className="absolute left-3 top-3 text-gray-400" size={18} />
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 border border-neural-200 rounded-lg focus:ring-2 focus:ring-saffron-500 focus:border-transparent outline-none transition-all"
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-saffron-500 focus:border-transparent outline-none transition-all"
                 placeholder="••••••••"
                 required
               />
@@ -100,7 +100,7 @@ export default function Login({ onLoginSuccess, onNavigateToSignup }) {
           </button>
         </form>
 
-        <div className="mt-8 pt-6 border-t border-neural-100 text-center text-sm text-neural-500">
+        <div className="mt-8 pt-6 border-t border-gray-100 text-center text-sm text-gray-500">
           Don't have an account?{' '}
           <button
             onClick={onNavigateToSignup}

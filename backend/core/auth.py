@@ -237,6 +237,7 @@ class AuthService:
 
         else:
             # Use persistence layer's create_user_account for in-memory fallback
+            from core.persistence import user_persistence
             new_user = {
                 "user_id": user_id,
                 "email": user_data.email,
@@ -277,26 +278,30 @@ class AuthService:
     
     async def login(self, credentials: UserLogin) -> Optional[AuthToken]:
         """Login with email and password."""
-        if self._db is None:
-            logger.error("Database not available for login")
-            return None
-        
-        user = await self._db.users.find_one({"email": credentials.email})
-        
+        user = None
+
+        if self._db is not None:
+            user = await self._db.users.find_one({"email": credentials.email})
+            if user and self._verify_password(credentials.password, user.get("password_hash", "")):
+                # Update last seen
+                await self._db.users.update_one(
+                    {"user_id": user["user_id"]},
+                    {"$set": {"last_seen": datetime.utcnow()}}
+                )
+            elif user:
+                return None  # Wrong password
+        else:
+            # In-memory fallback
+            from core.persistence import user_persistence
+            user = await user_persistence.get_user_by_email(credentials.email)
+            if user and not self._verify_password(credentials.password, user.get("password_hash", "")):
+                return None  # Wrong password
+
         if not user:
             return None  # User not found
-        
-        if not self._verify_password(credentials.password, user.get("password_hash", "")):
-            return None  # Wrong password
-        
-        # Update last seen
-        await self._db.users.update_one(
-            {"user_id": user["user_id"]},
-            {"$set": {"last_seen": datetime.utcnow()}}
-        )
-        
+
         token, expiry = self._generate_token(user["user_id"], user["email"])
-        
+
         return AuthToken(
             access_token=token,
             expires_in=expiry,

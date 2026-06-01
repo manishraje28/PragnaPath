@@ -1,21 +1,36 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Brain, Sparkles, BookOpen, Users, ArrowRight, Zap } from 'lucide-react';
-import WelcomeScreen from './components/WelcomeScreen';
+import { Brain, Sparkles, BookOpen, Users, ArrowRight, Zap, LogOut, User, ChevronLeft } from 'lucide-react';
+import LandingPage from './components/LandingPage';
+import Login from './components/Login';
+import Signup from './components/Signup';
+import Dashboard from './components/Dashboard';
 import TopicSelector from './components/TopicSelector';
 import DiagnosticFlow from './components/DiagnosticFlow';
 import LearningView from './components/LearningView';
 import ProfileCard from './components/ProfileCard';
 import AgentIndicator from './components/AgentIndicator';
-import AgentTracePanel from './components/AgentTracePanel';
-import DemoMode from './components/DemoMode';
 import LearningIntentSelector from './components/LearningIntentSelector';
 import VoiceButton from './components/VoiceButton';
-import { startSession, getTopics, getStoredSessionId, getStoredProfile, clearStoredSession } from './api';
+import {
+  startSession, getTopics, getStoredSessionId, getStoredProfile, clearStoredSession,
+  getAuthToken, storeAuthToken, storeUserData, getStoredUserData, clearAllUserData,
+  getCurrentUser, createGuestAccount, logout as logoutApi,
+  storeProfile
+} from './api';
 
 function App() {
-  // App state
-  const [currentPhase, setCurrentPhase] = useState('welcome'); // welcome, topic, intent, diagnostic, learning
+  // ==========================================
+  // AUTH STATE
+  // ==========================================
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // ==========================================
+  // APP STATE
+  // ==========================================
+  // Phases: 'landing' | 'login' | 'signup' | 'dashboard' | 'topic' | 'intent' | 'diagnostic' | 'learning'
+  const [currentPhase, setCurrentPhase] = useState('landing');
   const [sessionId, setSessionId] = useState(null);
   const [profile, setProfile] = useState(null);
   const [previousProfile, setPreviousProfile] = useState(null);
@@ -24,96 +39,187 @@ function App() {
   const [activeAgent, setActiveAgent] = useState(null);
   const [topics, setTopics] = useState([]);
   const [adaptationCount, setAdaptationCount] = useState(0);
-  const [isDemoMode, setIsDemoMode] = useState(false);
-  
-  // Agent trace state for observability panel
-  const [agentTraces, setAgentTraces] = useState([]);
-  const [showTracePanel, setShowTracePanel] = useState(true);
 
-  // Add trace helper
+  // Agent trace state
+  const [agentTraces, setAgentTraces] = useState([]);
+
+  // Trace helpers
   const addTrace = useCallback((agent, action, output = null, status = 'completed', isLoop = false) => {
-    const trace = {
-      id: Date.now(),
-      agent,
-      action,
-      output,
-      status,
-      isLoop,
-      timestamp: new Date().toISOString()
-    };
+    const trace = { id: Date.now(), agent, action, output, status, isLoop, timestamp: new Date().toISOString() };
     setAgentTraces(prev => [...prev, trace]);
     return trace.id;
   }, []);
 
-  // Update trace status
   const updateTrace = useCallback((traceId, updates) => {
-    setAgentTraces(prev => 
-      prev.map(t => t.id === traceId ? { ...t, ...updates } : t)
-    );
+    setAgentTraces(prev => prev.map(t => t.id === traceId ? { ...t, ...updates } : t));
   }, []);
 
-  // Restore session on mount
+  // ==========================================
+  // AUTH CHECK ON MOUNT
+  // ==========================================
   useEffect(() => {
-    const restoreSession = async () => {
-      const storedSessionId = getStoredSessionId();
-      const storedProfile = getStoredProfile();
-    
-      if (storedSessionId && storedProfile) {
-        console.log('Restoring session:', storedSessionId);
-        setSessionId(storedSessionId);
-        setProfile(storedProfile);
-        addTrace('sutradhar', 'Session restored from storage', `Session ID: ${storedSessionId}`);
-        setCurrentPhase('topic');
-      }
-    };
-    
-    restoreSession();
-  }, [addTrace]);
-
-  // Fetch topics on mount
-  useEffect(() => {
-    const fetchTopics = async () => {
+    const checkAuth = async () => {
       try {
-        const data = await getTopics();
-        setTopics(data.topics);
-      } catch (error) {
-        console.error('Failed to fetch topics:', error);
-        // Fallback topics
-        setTopics([
-          { id: 'os_deadlock', name: 'Operating Systems: Deadlock', icon: '🔒' },
-          { id: 'ds_trees', name: 'Data Structures: Trees', icon: '🌳' },
-          { id: 'algo_dp', name: 'Dynamic Programming', icon: '🧩' },
-        ]);
+        const token = getAuthToken();
+        const storedUser = getStoredUserData();
+
+        if (token && storedUser) {
+          try {
+            const verifiedUser = await getCurrentUser();
+            if (verifiedUser) {
+              setUser(verifiedUser);
+              // Restore profile from localStorage if exists
+              const storedProfile = getStoredProfile();
+              if (storedProfile) setProfile(storedProfile);
+              setCurrentPhase('dashboard');
+              setAuthLoading(false);
+              return;
+            }
+          } catch (e) {
+            // For guest users or server unavailable, use stored data
+            if (storedUser.is_guest) {
+              setUser(storedUser);
+              const storedProfile = getStoredProfile();
+              if (storedProfile) setProfile(storedProfile);
+              setCurrentPhase('dashboard');
+              setAuthLoading(false);
+              return;
+            }
+            clearAllUserData();
+          }
+        }
+      } catch (e) {
+        console.error('Auth check failed:', e);
       }
+      setAuthLoading(false);
+      setCurrentPhase('landing');
     };
-    fetchTopics();
+    checkAuth();
   }, []);
 
-  // Start a new session
+  // ==========================================
+  // FETCH TOPICS WHEN NEEDED
+  // ==========================================
+  useEffect(() => {
+    const needsTopics = ['dashboard', 'topic', 'intent', 'diagnostic', 'learning'].includes(currentPhase);
+    if (needsTopics && topics.length === 0) {
+      (async () => {
+        try {
+          const data = await getTopics();
+          setTopics(data.topics || []);
+        } catch (error) {
+          console.error('Failed to fetch topics:', error);
+          setTopics([
+            { id: 'os_deadlock', name: 'Operating Systems: Deadlock', icon: '🔒' },
+            { id: 'ds_trees', name: 'Data Structures: Trees', icon: '🌳' },
+            { id: 'algo_dp', name: 'Dynamic Programming', icon: '🧩' },
+          ]);
+        }
+      })();
+    }
+  }, [currentPhase, topics.length]);
+
+  // ==========================================
+  // SESSION INITIALIZATION (auto-create when needed)
+  // ==========================================
+  useEffect(() => {
+    if (['topic', 'intent', 'diagnostic', 'learning'].includes(currentPhase) && !sessionId && user) {
+      initSession();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPhase, sessionId, user]);
+
+  const initSession = async () => {
+    try {
+      setActiveAgent('sutradhar');
+      const traceId = addTrace('sutradhar', 'Initializing session...', null, 'in-progress');
+      const data = await startSession(null, false);
+      updateTrace(traceId, { status: 'completed', output: data.restored ? 'Session restored' : `New session: ${data.session_id}` });
+      setSessionId(data.session_id);
+      if (data.profile) {
+        setProfile(data.profile);
+        storeProfile(data.profile);
+      }
+      setActiveAgent(null);
+    } catch (error) {
+      console.error('Failed to init session:', error);
+      setActiveAgent(null);
+    }
+  };
+
+  // ==========================================
+  // AUTH HANDLERS
+  // ==========================================
+  const handleLoginSuccess = (data) => {
+    setUser(data.user);
+    setSessionId(null);
+    setProfile(null);
+    setCurrentPhase('dashboard');
+  };
+
+  const handleSignupSuccess = (data) => {
+    setUser(data.user);
+    setSessionId(null);
+    setProfile(null);
+    setCurrentPhase('dashboard');
+  };
+
+  const handleGuestStart = async () => {
+    try {
+      const data = await createGuestAccount();
+      setUser(data.user);
+      setSessionId(null);
+      setProfile(null);
+      setCurrentPhase('dashboard');
+    } catch (error) {
+      console.error('Guest account creation failed:', error);
+      setUser({ user_id: 'guest', name: 'Guest', is_guest: true });
+      setCurrentPhase('dashboard');
+    }
+  };
+
+  const handleLogout = () => {
+    logoutApi();
+    clearStoredSession();
+    setUser(null);
+    setSessionId(null);
+    setProfile(null);
+    setPreviousProfile(null);
+    setCurrentTopic(null);
+    setLearningIntent(null);
+    setActiveAgent(null);
+    setAgentTraces([]);
+    setAdaptationCount(0);
+    setCurrentPhase('landing');
+  };
+
+  // ==========================================
+  // DASHBOARD HANDLERS
+  // ==========================================
+  const handleNewTopic = () => {
+    setCurrentPhase('topic');
+  };
+
+  const handleContinueTopic = (topic) => {
+    // User clicking "Continue" on an already-explored topic
+    // Skip diagnostic → go straight to learning with existing profile
+    setCurrentTopic(topic);
+    addTrace('sutradhar', 'Continuing topic', topic);
+    setCurrentPhase('learning');
+  };
+
+  // ==========================================
+  // LEARNING FLOW HANDLERS
+  // ==========================================
   const handleStartSession = async (topic = null, forceNew = false) => {
     try {
       setActiveAgent('sutradhar');
       const traceId = addTrace('sutradhar', 'Initializing session...', null, 'in-progress');
-      
       const data = await startSession(topic, forceNew);
-      
-      // If session was restored, show different message
-      if (data.restored) {
-        updateTrace(traceId, { 
-          status: 'completed', 
-          output: 'Session restored successfully' 
-        });
-      } else {
-        updateTrace(traceId, { 
-          status: 'completed', 
-          output: `New session: ${data.session_id}` 
-        });
-      }
-      
+      updateTrace(traceId, { status: 'completed', output: data.restored ? 'Session restored' : `New session: ${data.session_id}` });
       setSessionId(data.session_id);
       setProfile(data.profile);
       setActiveAgent(null);
-      
       if (topic) {
         setCurrentTopic(topic);
         setCurrentPhase('diagnostic');
@@ -126,84 +232,134 @@ function App() {
     }
   };
 
-  // Handle new session (clear previous)
-  const handleNewSession = () => {
-    clearStoredSession();
-    setSessionId(null);
-    setProfile(null);
-    setLearningIntent(null);
-    setAgentTraces([]);
-    setAdaptationCount(0);
-    setCurrentPhase('welcome');
+  const handleBackToDashboard = () => {
+    setCurrentPhase('dashboard');
   };
 
-
-  // Handle topic selection
   const handleTopicSelect = (topic) => {
     addTrace('sutradhar', 'Topic selected', topic);
     setCurrentTopic(topic);
-    setCurrentPhase('intent');  // Go to intent selection first
+
+    // Check if this topic was already explored (profile has it)
+    if (profile?.topics_explored?.includes(topic)) {
+      // Offer to skip diagnostic
+      const skipDiag = window.confirm(
+        `You've already explored "${topic}" before. Your profile is adapted for it.\n\nClick OK to continue learning directly, or Cancel to retake the diagnostic.`
+      );
+      if (skipDiag) {
+        setCurrentPhase('learning');
+        return;
+      }
+    }
+    setCurrentPhase('intent');
   };
 
-  // Handle learning intent selection
   const handleIntentComplete = (intent) => {
     setLearningIntent(intent);
     addTrace('pragnabodh', 'Learning goal set', intent);
     setCurrentPhase('diagnostic');
   };
 
-  // Handle diagnostic completion
   const handleDiagnosticComplete = (newProfile, insights) => {
     setPreviousProfile(profile);
     setProfile(newProfile);
+    storeProfile(newProfile);
     addTrace('pragnabodh', 'Diagnostic complete', 'Profile built successfully');
     setCurrentPhase('learning');
   };
 
-  // Handle profile update (adaptation)
   const handleProfileUpdate = (newProfile, trigger = 'adaptation') => {
     setPreviousProfile(profile);
     setProfile(newProfile);
+    storeProfile(newProfile);
     setAdaptationCount(prev => prev + 1);
     addTrace('pragnabodh', 'Profile adapted', `Trigger: ${trigger}`, 'completed', true);
   };
 
-  // Handle agent changes with tracing
   const handleAgentChange = (agent) => {
     if (agent && agent !== activeAgent) {
       addTrace(agent, 'Agent activated', null, 'in-progress');
     } else if (!agent && activeAgent) {
-      // Update the last trace for this agent
       setAgentTraces(prev => {
         const lastTrace = [...prev].reverse().find(t => t.agent === activeAgent && t.status === 'in-progress');
-        if (lastTrace) {
-          return prev.map(t => t.id === lastTrace.id ? { ...t, status: 'completed' } : t);
-        }
+        if (lastTrace) return prev.map(t => t.id === lastTrace.id ? { ...t, status: 'completed' } : t);
         return prev;
       });
     }
     setActiveAgent(agent);
   };
 
-  // Render current phase
+  // ==========================================
+  // RENDER
+  // ==========================================
+  const isPublicPhase = ['landing', 'login', 'signup'].includes(currentPhase);
+  const isAppPhase = !isPublicPhase;
+
   const renderPhase = () => {
     switch (currentPhase) {
-      case 'welcome':
+      case 'landing':
         return (
-          <WelcomeScreen 
-            onStart={() => handleStartSession()} 
+          <LandingPage
+            onLogin={() => setCurrentPhase('login')}
+            onSignup={() => setCurrentPhase('signup')}
+            onGuest={handleGuestStart}
           />
         );
-      
+
+      case 'login':
+        return (
+          <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-saffron-50/30 flex items-center justify-center relative">
+            <button
+              onClick={() => setCurrentPhase('landing')}
+              className="absolute top-6 left-6 flex items-center space-x-2 text-gray-400 hover:text-gray-700 transition-colors z-10"
+            >
+              <ChevronLeft size={20} />
+              <span className="text-sm">Back</span>
+            </button>
+            <Login
+              onLoginSuccess={handleLoginSuccess}
+              onNavigateToSignup={() => setCurrentPhase('signup')}
+            />
+          </div>
+        );
+
+      case 'signup':
+        return (
+          <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-peacock-50/30 flex items-center justify-center relative">
+            <button
+              onClick={() => setCurrentPhase('landing')}
+              className="absolute top-6 left-6 flex items-center space-x-2 text-gray-400 hover:text-gray-700 transition-colors z-10"
+            >
+              <ChevronLeft size={20} />
+              <span className="text-sm">Back</span>
+            </button>
+            <Signup
+              onSignupSuccess={handleSignupSuccess}
+              onNavigateToLogin={() => setCurrentPhase('login')}
+            />
+          </div>
+        );
+
+      case 'dashboard':
+        return (
+          <Dashboard
+            user={user}
+            profile={profile}
+            onNewTopic={handleNewTopic}
+            onContinueTopic={handleContinueTopic}
+            onLogout={handleLogout}
+          />
+        );
+
       case 'topic':
         return (
-          <TopicSelector 
+          <TopicSelector
             topics={topics}
             onSelect={handleTopicSelect}
             sessionId={sessionId}
           />
         );
-      
+
       case 'intent':
         return (
           <div className="flex items-center justify-center min-h-[60vh]">
@@ -217,7 +373,7 @@ function App() {
             </div>
           </div>
         );
-      
+
       case 'diagnostic':
         return (
           <DiagnosticFlow
@@ -228,7 +384,7 @@ function App() {
             addTrace={addTrace}
           />
         );
-      
+
       case 'learning':
         return (
           <LearningView
@@ -242,98 +398,108 @@ function App() {
             addTrace={addTrace}
           />
         );
-      
-      /* Demo mode case commented out for now
-      case 'demo':
-        return (
-          <DemoMode
-            topics={topics}
-            onBack={() => {
-              setIsDemoMode(false);
-              setCurrentPhase('welcome');
-            }}
-          />
-        );
-      */
-      
+
       default:
-        return <WelcomeScreen onStart={() => handleStartSession()} />;
+        return null;
     }
   };
 
+  // ==========================================
+  // LOADING STATE
+  // ==========================================
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
+          <div className="w-16 h-16 bg-gradient-to-br from-saffron-500 to-saffron-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-saffron-500/20">
+            <span className="text-white font-bold text-2xl">प्र</span>
+          </div>
+          <div className="w-6 h-6 border-2 border-saffron-200 border-t-saffron-500 rounded-full animate-spin mx-auto mt-4" />
+        </motion.div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // MAIN RENDER
+  // ==========================================
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            {/* Logo */}
-            <div 
-              className="flex items-center space-x-3 cursor-pointer"
-              onClick={() => {
-                if (currentPhase !== 'welcome') {
-                  if (confirm('Return to home? Your session will be preserved.')) {
-                    setCurrentPhase('welcome');
-                  }
-                }
-              }}
-            >
-              <div className="w-10 h-10 bg-gradient-to-br from-saffron-500 to-saffron-600 rounded-xl flex items-center justify-center shadow-lg shadow-saffron-500/25">
-                <span className="text-white font-bold text-lg">प्र</span>
-              </div>
-              <div>
-                <h1 className="font-display font-bold text-xl text-gray-900">PragnaPath</h1>
-                <p className="text-xs text-gray-500 -mt-1">The AI that learns how you learn</p>
-              </div>
-            </div>
 
-            {/* Right side */}
-            <div className="flex items-center space-x-4">
-              {/* Active Agent Indicator */}
-              {activeAgent && (
-                <AgentIndicator agent={activeAgent} />
-              )}
-
-              {/* Adaptation Counter */}
-              {adaptationCount > 0 && currentPhase === 'learning' && (
-                <motion.div
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  className="flex items-center space-x-2 bg-gradient-to-r from-peacock-500 to-peacock-600 text-white px-3 py-1.5 rounded-full text-sm"
-                >
-                  <Zap size={14} />
-                  <span>{adaptationCount} adaptation{adaptationCount > 1 ? 's' : ''}</span>
-                </motion.div>
-              )}
-
-              {/* Session ID */}
-              {sessionId && (
-                <div className="flex items-center space-x-2">
-                  <div className="text-sm text-gray-500">
-                    Session: <span className="font-mono text-gray-700">{sessionId}</span>
-                  </div>
-                  <button
-                    onClick={handleNewSession}
-                    className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded hover:bg-gray-100"
-                  >
-                    New
-                  </button>
+      {/* ═══════ APP HEADER (only for authenticated views) ═══════ */}
+      {isAppPhase && (
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center h-16">
+              {/* Logo — click goes to dashboard */}
+              <div
+                className="flex items-center space-x-3 cursor-pointer"
+                onClick={handleBackToDashboard}
+              >
+                <div className="w-10 h-10 bg-gradient-to-br from-saffron-500 to-saffron-600 rounded-xl flex items-center justify-center shadow-lg shadow-saffron-500/20">
+                  <span className="text-white font-bold text-lg">प्र</span>
                 </div>
-              )}
+                <div>
+                  <h1 className="font-display font-bold text-xl text-gray-900">PragnaPath</h1>
+                  <p className="text-xs text-gray-400 -mt-1">The AI that learns how you learn</p>
+                </div>
+              </div>
+
+              {/* Right side */}
+              <div className="flex items-center space-x-4">
+                {/* Active Agent */}
+                {activeAgent && <AgentIndicator agent={activeAgent} />}
+
+                {/* Adaptation Counter */}
+                {adaptationCount > 0 && currentPhase === 'learning' && (
+                  <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
+                    className="flex items-center space-x-2 bg-gradient-to-r from-peacock-500 to-peacock-600 text-white px-3 py-1.5 rounded-full text-sm"
+                  >
+                    <Zap size={14} />
+                    <span>{adaptationCount} adaptation{adaptationCount > 1 ? 's' : ''}</span>
+                  </motion.div>
+                )}
+
+                {/* Dashboard link (when in learning flow) */}
+                {currentPhase !== 'dashboard' && (
+                  <button
+                    onClick={handleBackToDashboard}
+                    className="text-xs text-gray-400 hover:text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    Dashboard
+                  </button>
+                )}
+
+                {/* User badge */}
+                {user && (
+                  <div className="flex items-center space-x-3">
+                    <div className="flex items-center space-x-2 bg-gray-50 px-3 py-1.5 rounded-full border border-gray-200">
+                      <div className="w-6 h-6 bg-gradient-to-br from-saffron-400 to-peacock-500 rounded-full flex items-center justify-center">
+                        <User size={12} className="text-white" />
+                      </div>
+                      <span className="text-sm font-medium text-gray-700">
+                        {user.name || user.email?.split('@')[0] || 'Guest'}
+                      </span>
+                      {user.is_guest && (
+                        <span className="text-xs bg-saffron-100 text-saffron-600 px-2 py-0.5 rounded-full">Guest</span>
+                      )}
+                    </div>
+                    <button
+                      onClick={handleLogout}
+                      className="flex items-center space-x-1 text-sm text-gray-400 hover:text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                      title="Log out"
+                    >
+                      <LogOut size={16} />
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
-      {/* Agent Trace Panel - COMMENTED OUT FOR NOW
-      <AgentTracePanel 
-        traces={agentTraces} 
-        isExpanded={showTracePanel}
-        onToggle={() => setShowTracePanel(!showTracePanel)}
-      />
-      */}
-
-      {/* Profile Sidebar (when learning) */}
+      {/* ═══════ PROFILE SIDEBAR (when learning) ═══════ */}
       <AnimatePresence>
         {currentPhase === 'learning' && profile && (
           <motion.div
@@ -347,49 +513,43 @@ function App() {
         )}
       </AnimatePresence>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* ═══════ MAIN CONTENT ═══════ */}
+      {isPublicPhase ? (
         <AnimatePresence mode="wait">
           <motion.div
             key={currentPhase}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
           >
             {renderPhase()}
           </motion.div>
         </AnimatePresence>
-      </main>
+      ) : (
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={currentPhase}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+            >
+              {renderPhase()}
+            </motion.div>
+          </AnimatePresence>
+        </main>
+      )}
 
-      {/* Voice Assistant - Available only during learning/explanation */}
+      {/* ═══════ VOICE ASSISTANT (learning only) ═══════ */}
       {currentPhase === 'learning' && (
         <VoiceButton
           topic={currentTopic}
           sessionId={sessionId}
-          onTranscript={(text) => {
-            addTrace('voice', 'User spoke', text);
-          }}
+          onTranscript={(text) => addTrace('voice', 'User spoke', text)}
         />
       )}
-
-      {/* Footer */}
-      <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 py-3">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center text-sm text-gray-500">
-            <div className="flex items-center space-x-4">
-              <span className="flex items-center space-x-1">
-                {/* <Brain size={14} /> */}
-                {/* <span>Powered by Google Gemini + ADK</span> */}
-              </span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <span>PragnaPath</span>
-              <span className="text-saffron-500">🇮🇳</span>
-            </div>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }

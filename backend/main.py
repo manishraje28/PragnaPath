@@ -257,6 +257,22 @@ async def get_current_user(request: Request):
     return user
 
 
+@app.post("/api/auth/guest", response_model=AuthToken)
+async def create_guest():
+    """Create anonymous guest account for frictionless start."""
+    # Ensure auth service has persistence connection
+    if not auth_service.is_available and user_persistence.is_connected:
+        auth_service.set_database(user_persistence._db)
+    
+    token = await auth_service.create_guest()
+    if not token:
+        raise HTTPException(
+            status_code=500,
+            detail="Could not create guest account."
+        )
+    return token
+
+
 
 # ============================================
 # PERSISTENCE HELPERS
