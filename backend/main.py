@@ -143,7 +143,9 @@ if os.getenv("FRONTEND_URL"):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins, # Use the list defined above
+    allow_origins=[
+        "https://pragnapath.vercel.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
