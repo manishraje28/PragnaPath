@@ -16,6 +16,7 @@ import {
   startSession, getTopics, getStoredSessionId, getStoredProfile, clearStoredSession,
   getAuthToken, storeAuthToken, storeUserData, getStoredUserData, clearAllUserData,
   getCurrentUser, createGuestAccount, logout as logoutApi,
+  getSession, getProfile, getUserData,
   storeProfile
 } from './api';
 
@@ -405,6 +406,64 @@ function App() {
   };
 
   // ==========================================
+  // REFRESH ON TAB VISIBLE
+  // When the user returns to the tab, refresh the session/profile so the dashboard shows latest progress
+  useEffect(() => {
+    const handleVisibility = async () => {
+      if (document.visibilityState === 'visible') {
+        try {
+          const stored = getStoredSessionId();
+          if (stored) {
+            const sessionData = await getSession(stored);
+            if (sessionData?.profile) {
+              setProfile(sessionData.profile);
+              storeProfile(sessionData.profile);
+            }
+          }
+        } catch (err) {
+          console.error('Session refresh on visibility failed:', err);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [user, sessionId]);
+
+  // Ensure dashboard shows latest profile when the user navigates to it
+  useEffect(() => {
+    const restoreForDashboard = async () => {
+      if (currentPhase !== 'dashboard') return;
+      if (profile) return; // already loaded
+
+      try {
+        const stored = getStoredSessionId();
+        if (stored) {
+          const sessionData = await getSession(stored);
+          if (sessionData?.profile) {
+            setProfile(sessionData.profile);
+            storeProfile(sessionData.profile);
+            return;
+          }
+        }
+
+        // Fallback: try user-level data
+        if (user?.user_id) {
+          const userData = await getUserData(user.user_id);
+          if (userData?.profile) {
+            setProfile(userData.profile);
+            storeProfile(userData.profile);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to restore profile for dashboard:', err);
+      }
+    };
+
+    restoreForDashboard();
+  }, [currentPhase, user, sessionId, profile]);
+
   // LOADING STATE
   // ==========================================
   if (authLoading) {
