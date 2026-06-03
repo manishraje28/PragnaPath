@@ -30,4 +30,4 @@ EXPOSE 8000
 
 # Command to run (using shell form to allow variable expansion if needed, but array is safer)
 # using host 0.0.0.0 is critical for docker
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]

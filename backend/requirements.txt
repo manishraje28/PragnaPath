@@ -26,3 +26,5 @@ edge-tts>=7.0.0  # Microsoft Edge TTS with Indian voices
 
 # Dev Tools
 httpx==0.28.1
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
